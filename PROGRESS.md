@@ -4,10 +4,16 @@ Updated continuously. Assume the reader is catching up cold.
 
 ## Done
 - Planning docs: SPEC.md, DECISIONS.md, DEPENDENCIES.md.
-- Git repo initialized at /Users/tarunyadgirkar/Claude/gestalt.
+- Git repo + scaffold (package.json, tsconfig, vitest, deps installed).
+- Type contract: src/types.ts, src/landmarks.ts (geometry + named points).
+- **Task #1 DONE**: synthetic generator (poser + sequences) with 7 positive
+  fixtures (exact onset labels) + 6 adversarial negatives + seeded dropout.
+  Sanity test green: 13/13 (test/synthetic.test.ts).
 
 ## In progress
-- Project scaffold (package.json, tsconfig, vitest).
+- Task #2: authoring acceptance suite. DSL grammar locked (see gestures/*.yaml
+  design in this file's Notes). Next: write 7 gesture YAMLs + public API stubs +
+  acceptance tests (detection/negatives/dropout/competing/roundtrip), watch RED.
 
 ## Next (ordered per autonomy contract)
 1. Scaffold + install deps.
