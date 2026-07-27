@@ -1,0 +1,31 @@
+{
+  "name": "gestalt",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Declarative gesture recognition for hand-tracked spatial interfaces, plus a tunable eval harness.",
+  "type": "module",
+  "engines": { "node": ">=20" },
+  "bin": {
+    "gestalt-eval": "src/cli/eval.ts"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit",
+    "eval": "tsx src/cli/eval.ts",
+    "regression": "tsx src/cli/eval.ts regression",
+    "report": "tsx src/cli/eval.ts report",
+    "demo": "vite demo"
+  },
+  "dependencies": {
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/js-yaml": "^4.0.9",
+    "@types/node": "^20.14.0",
+    "js-yaml": "^4.1.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.5.0",
+    "vitest": "^2.0.0"
+  }
+}
