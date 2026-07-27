@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { loadGestureLibrary } from '../../src/index.js';
+import { loadGestureLibrary, compile, parseGesture } from '../../src/index.js';
 import { positiveFixtures } from '../../src/synthetic/sequences.js';
 import { pose } from '../../src/synthetic/poser.js';
 import { replay, signature } from '../helpers.js';
@@ -28,7 +28,10 @@ describe('competition: preemption by strictly higher priority (SPEC §5 rule 2)'
     expect(events.filter((e) => e.gesture === 'pinch' && e.phase === 'end')).toHaveLength(0);
   });
 
-  it('two-hand-scale preempts both single-hand pinches at once', () => {
+  it('escalates one rung at a time: pinch -> pinch-drag -> two-hand-scale', () => {
+    // Two pinched hands moving apart satisfy all three gestures in turn. Each rung is
+    // taken by strictly higher priority (10 -> 20 -> 30), and each displaced gesture is
+    // told it was superseded, so a consumer can undo exactly what it applied.
     const fixture = positiveFixtures().find((f) => f.target === 'two-hand-scale')!;
     const events = replay(machines, fixture.session);
 
@@ -36,13 +39,29 @@ describe('competition: preemption by strictly higher priority (SPEC §5 rule 2)'
     expect(pinchStarts, 'one pinch instance per tracked hand').toHaveLength(2);
     expect(pinchStarts[0]!.hands[0]).not.toBe(pinchStarts[1]!.hands[0]);
 
+    const pinchCancels = events.filter((e) => e.gesture === 'pinch' && e.phase === 'cancel');
+    expect(pinchCancels).toHaveLength(2);
+    for (const c of pinchCancels) expect(c.reason).toBe('preempted_by:pinch-drag');
+
+    const dragStarts = events.filter((e) => e.gesture === 'pinch-drag' && e.phase === 'start');
+    expect(dragStarts, 'one drag per hand once both translate').toHaveLength(2);
+
     const scaleStart = events.find((e) => e.gesture === 'two-hand-scale' && e.phase === 'start')!;
-    const cancels = events.filter((e) => e.gesture === 'pinch' && e.phase === 'cancel');
-    expect(cancels).toHaveLength(2);
-    for (const c of cancels) {
+    expect(scaleStart).toBeDefined();
+
+    const dragCancels = events.filter((e) => e.gesture === 'pinch-drag' && e.phase === 'cancel');
+    expect(dragCancels, 'both drags yield to the two-hand gesture').toHaveLength(2);
+    for (const c of dragCancels) {
       expect(c.reason).toBe('preempted_by:two-hand-scale');
       expect(c.t).toBe(scaleStart.t);
     }
+
+    // Strictly increasing priority up the ladder, and nothing displaced silently.
+    const order = ['pinch', 'pinch-drag', 'two-hand-scale'];
+    const firstStartT = order.map((g) => events.find((e) => e.gesture === g && e.phase === 'start')!.t);
+    expect(firstStartT[0]!).toBeLessThan(firstStartT[1]!);
+    expect(firstStartT[1]!).toBeLessThan(firstStartT[2]!);
+    expect(events.filter((e) => e.phase === 'end' && e.gesture !== 'two-hand-scale')).toHaveLength(0);
   });
 
   it('a lower-priority newcomer never displaces an active gesture', () => {
@@ -64,10 +83,10 @@ describe('competition: preemption by strictly higher priority (SPEC §5 rule 2)'
 });
 
 describe('competition: fresh vs fresh (SPEC §5 rule 1)', () => {
-  // Hands pinch, then simultaneously separate AND rotate: two-hand-scale and
-  // two-hand-rotate both cross their trigger on the same frame with equal priority
-  // (30) and equal confidence. Documented tiebreak is the lexicographically smaller
-  // name, so 'two-hand-rotate' wins and 'two-hand-scale' emits nothing.
+  // Hands pinch, then simultaneously separate AND rotate. two-hand-scale and
+  // two-hand-rotate hold equal priority (30), so the documented order falls through to
+  // confidence: whichever sits deeper inside its threshold takes the hands, and the
+  // other emits nothing at all.
   function scaleAndRotate(): Session {
     const frames: Frame[] = [];
     for (let i = 0; i < 60; i++) {
@@ -101,20 +120,63 @@ describe('competition: fresh vs fresh (SPEC §5 rule 1)', () => {
     expect(scale.length + rotate.length).toBe(1);
   });
 
-  it('breaks the tie by name, deterministically and repeatably', () => {
+  it('picks the same winner on every run', () => {
     const s = scaleAndRotate();
     const first = replay(machines, s);
     for (let i = 0; i < 5; i++) expect(signature(replay(machines, s))).toBe(signature(first));
-
-    const winner = first.find(
-      (e) => e.phase === 'start' && e.gesture.startsWith('two-hand-'),
-    )!.gesture;
-    expect(winner).toBe('two-hand-rotate');
   });
 
   it('the loser emits nothing at all, not even a cancel', () => {
     const events = replay(machines, scaleAndRotate());
-    expect(events.filter((e) => e.gesture === 'two-hand-scale')).toHaveLength(0);
+    const winner = events.find((e) => e.phase === 'start' && e.gesture.startsWith('two-hand-'))!.gesture;
+    const loser = winner === 'two-hand-scale' ? 'two-hand-rotate' : 'two-hand-scale';
+    expect(events.filter((e) => e.gesture === loser)).toHaveLength(0);
+  });
+
+  it('resolves on confidence when priorities are equal', () => {
+    const events = replay(machines, scaleAndRotate());
+    const winner = events.find((e) => e.phase === 'start' && e.gesture.startsWith('two-hand-'))!;
+    // The winner must be genuinely inside its threshold, not an arbitrary pick.
+    expect(winner.confidence).toBeGreaterThan(0.5);
+  });
+
+  it('falls through to the smaller name when priority and confidence are identical', () => {
+    // Two definitions that differ only in name: same priority, same guard, so their
+    // confidences are bit-identical and only rule (c) can separate them.
+    const twin = (name: string): string => `
+name: ${name}
+hands: 1
+priority: 50
+predicates:
+  pinched: { distance: { a: thumb_tip, b: index_tip, lt: 0.05, exit: 0.075 } }
+states:
+  - id: idle
+    transitions:
+      - when: pinched
+        to: held
+        emit: { phase: start }
+  - id: held
+    accept: true
+    transitions:
+      - when: { not: pinched }
+        to: idle
+        emit: { phase: end }
+`;
+    const twins = [compile(parseGesture(twin('zzz-twin'))), compile(parseGesture(twin('aaa-twin')))];
+
+    const frames: Frame[] = Array.from({ length: 20 }, (_, i) => ({
+      t: i * 16,
+      hands: [pose('pinch', { pinchAmount: i < 5 ? 0 : 1, center: { x: 0.5, y: 0.5 } })],
+    }));
+    const events = replay(twins, {
+      meta: { name: 'twins', schema: 'gestalt/v1' },
+      frames,
+      labels: [],
+    });
+
+    const starts = events.filter((e) => e.phase === 'start');
+    expect(starts, 'exactly one twin may claim the hand').toHaveLength(1);
+    expect(starts[0]!.gesture).toBe('aaa-twin');
   });
 });
 

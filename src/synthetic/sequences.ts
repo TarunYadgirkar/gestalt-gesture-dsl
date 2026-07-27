@@ -173,9 +173,14 @@ function twoHandScalePositive(): LabeledSession {
   return {
     session: session('two-hand-scale-positive', frames, [
       { gesture: 'two-hand-scale', onset, offset: tAt(58) },
-      // both hands are pinched from frame 0; those pinches are real, then preempted
+      // Both hands are pinched from frame 0 and then translate apart, so on each hand
+      // in isolation a pinch and then a pinch-drag genuinely occur. They are preempted
+      // by the two-hand gesture (SPEC §5 rule 2), not false positives — so they are
+      // labeled rather than counted against precision.
       { gesture: 'pinch', onset: frames[0]!.t, offset: onset },
       { gesture: 'pinch', onset: frames[0]!.t, offset: onset },
+      { gesture: 'pinch-drag', onset: frames[0]!.t, offset: onset },
+      { gesture: 'pinch-drag', onset: frames[0]!.t, offset: onset },
     ]),
     target: 'two-hand-scale',
     expectFire: true,
@@ -204,8 +209,12 @@ function twoHandRotatePositive(): LabeledSession {
   return {
     session: session('two-hand-rotate-positive', frames, [
       { gesture: 'two-hand-rotate', onset, offset: tAt(58) },
+      // Same as the scale fixture: real pinches and real per-hand translation, both
+      // superseded by the two-hand gesture once the bearing changes enough.
       { gesture: 'pinch', onset: frames[0]!.t, offset: onset },
       { gesture: 'pinch', onset: frames[0]!.t, offset: onset },
+      { gesture: 'pinch-drag', onset: frames[0]!.t, offset: onset },
+      { gesture: 'pinch-drag', onset: frames[0]!.t, offset: onset },
     ]),
     target: 'two-hand-rotate',
     expectFire: true,

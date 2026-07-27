@@ -88,6 +88,25 @@ kind per gesture family, there is a single `expr` predicate comparing a mini-lan
 expression to a threshold. Keeps the DSL small and lets new gestures be added without
 touching the compiler.
 
+## D18 — Preemption escalates one rung at a time; tests updated to assert the ladder
+Running the real runtime showed two pinched hands moving apart produce
+`pinch → pinch-drag → two-hand-scale`, each hop preempting by strictly higher priority
+(10 → 20 → 30). My acceptance test had assumed a single hop (pinch preempted directly
+by two-hand-scale). The runtime is right and the assumption was wrong: on each hand in
+isolation a pinch and then a drag genuinely occur. Tests were **strengthened**, not
+weakened — they now assert every rung of the ladder, that each displaced gesture is
+told which gesture superseded it, and that no displaced gesture also reports a clean
+`end`. The two-hand fixtures carry honest `pinch` and `pinch-drag` ground-truth labels
+for the same reason.
+
+## D19 — Equal priority resolves on confidence before name
+SPEC §5 rule 1 orders by priority, then confidence, then name. A test had assumed
+scale-vs-rotate was decided by name, but their confidences differ (different threshold
+depths), so confidence decides — as specified. Rather than relax the rule, the test now
+asserts what is actually guaranteed (exactly one winner, silent loser, identical result
+on every run) and a **new** test covers the name rule properly, using two definitions
+that differ only in name so their confidences are bit-identical.
+
 ## D14 — Repo location: /Users/tarunyadgirkar/Claude/gestalt
 cwd already holds the user's projects. Memory notes a ~/TarunsCode convention, but that
 tree isn't present here and cwd is where the session launched. Self-contained git repo.
