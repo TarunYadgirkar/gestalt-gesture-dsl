@@ -11,8 +11,13 @@ predicates:
     all:
       - distance: { a: h0.thumb_tip, b: h0.index_tip, lt: 0.05, exit: 0.075 }
       - distance: { a: h1.thumb_tip, b: h1.index_tip, lt: 0.05, exit: 0.075 }
+  # Quoted: an unquoted expression containing a comma would be split by YAML's
+  # flow-mapping syntax.
   turned:
-    expr: { value: abs(adiff(pair_angle,capture.anchor_angle)), gt: 15, exit: 8 }
+    expr:
+      value: "abs(adiff(pair_angle,capture.anchor_angle))"
+      gt: 15
+      exit: 8
 
 states:
   - id: idle
@@ -34,7 +39,7 @@ states:
         emit:
           phase: start
           data:
-            degrees: adiff(pair_angle,capture.anchor_angle)
+            degrees: "adiff(pair_angle,capture.anchor_angle)"
 
   - id: rotating
     accept: true
@@ -50,4 +55,4 @@ states:
         emit:
           phase: update
           data:
-            degrees: adiff(pair_angle,capture.anchor_angle)
+            degrees: "adiff(pair_angle,capture.anchor_angle)"

@@ -11,6 +11,9 @@ const cmp = {
   exit: z.number().optional(), // hysteresis release threshold (SPEC §2.3)
 };
 
+// Expression sources are strings, but YAML turns an unquoted `1` into a number.
+const ExprSource = z.union([z.string(), z.number().transform(String)]);
+
 const FingerSchema = z.enum(['thumb', 'index', 'middle', 'ring', 'pinky']);
 const AxisSchema = z.enum(['x', 'y', 'z', 'planar']);
 
@@ -67,7 +70,9 @@ export const PredicateSchema: z.ZodType<Predicate> = z.lazy(() =>
 
 export const EmitSchema = z.object({
   phase: z.enum(['start', 'update', 'end', 'cancel']),
-  data: z.record(z.string(), z.string()).optional(), // key -> expression source
+  // key -> expression source. A bare number is a valid expression, so YAML's
+  // `dir: 1` is accepted and normalized to its source text.
+  data: z.record(z.string(), ExprSource).optional(),
 }).strict();
 
 export const TransitionSchema = z.object({
@@ -83,7 +88,7 @@ export const StateSchema = z.object({
   initial: z.boolean().optional(),
   accept: z.boolean().optional(),
   emit: EmitSchema.optional(),
-  capture: z.record(z.string(), z.string()).optional(),
+  capture: z.record(z.string(), ExprSource).optional(),
   transitions: z.array(TransitionSchema).default([]),
 }).strict();
 
