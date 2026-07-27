@@ -35,6 +35,12 @@ function velAxis(cur: Landmark, prev: Landmark, axis: 'x' | 'y' | 'z'): number {
   return (cur[axis] - prev[axis]) / (DT / 1000);
 }
 
+// Planar speed, matching the `moving` predicate in pinch-drag.yaml. Using an x-only
+// velocity here would mislabel a rotation, whose hands travel mostly in y.
+function planarSpeed(cur: Landmark, prev: Landmark, dtMs: number): number {
+  return Math.hypot(cur.x - prev.x, cur.y - prev.y) / (dtMs / 1000);
+}
+
 // First frame time where pred holds; falls back to first frame if never (shouldn't happen for positives).
 function onsetT(frames: Frame[], pred: (f: Frame, prev: Frame | null, i: number) => boolean): number {
   for (let i = 0; i < frames.length; i++) {
@@ -155,6 +161,18 @@ function palmPushPositive(): LabeledSession {
   };
 }
 
+// When both hands are pinched and translating, each hand on its own is a pinch-drag.
+// Label it at the frame the hands actually start moving, not at the frame they pinch.
+function perHandDragOnset(frames: Frame[]): number {
+  return onsetT(frames, (f, prev) => {
+    if (!prev || f.hands.length < 2 || prev.hands.length < 2) return false;
+    return f.hands.every((h, i) => {
+      const p = prev.hands[i];
+      return !!p && isPinched(h) && planarSpeed(palm(h), palm(p), f.t - prev.t) > V_DRAG;
+    });
+  });
+}
+
 function twoHandScalePositive(): LabeledSession {
   let anchor: number | null = null;
   const frames = build(60, (i) => {
@@ -163,6 +181,7 @@ function twoHandScalePositive(): LabeledSession {
     const h1 = pose('pinch', { pinchAmount: 1, handedness: 'Right', center: { x: 0.65 + 0.15 * s, y: 0.5 } });
     return [h0, h1];
   });
+  const dragOnset = perHandDragOnset(frames);
   const onset = onsetT(frames, (f) => {
     const [a, b] = f.hands;
     if (!a || !b || !isPinched(a) || !isPinched(b)) return false;
@@ -177,10 +196,10 @@ function twoHandScalePositive(): LabeledSession {
       // in isolation a pinch and then a pinch-drag genuinely occur. They are preempted
       // by the two-hand gesture (SPEC §5 rule 2), not false positives — so they are
       // labeled rather than counted against precision.
-      { gesture: 'pinch', onset: frames[0]!.t, offset: onset },
-      { gesture: 'pinch', onset: frames[0]!.t, offset: onset },
-      { gesture: 'pinch-drag', onset: frames[0]!.t, offset: onset },
-      { gesture: 'pinch-drag', onset: frames[0]!.t, offset: onset },
+      { gesture: 'pinch', onset: frames[0]!.t, offset: dragOnset },
+      { gesture: 'pinch', onset: frames[0]!.t, offset: dragOnset },
+      { gesture: 'pinch-drag', onset: dragOnset, offset: onset },
+      { gesture: 'pinch-drag', onset: dragOnset, offset: onset },
     ]),
     target: 'two-hand-scale',
     expectFire: true,
@@ -199,6 +218,7 @@ function twoHandRotatePositive(): LabeledSession {
     const h1 = pose('pinch', { pinchAmount: 1, handedness: 'Right', center: { x: cx + r * Math.cos(th), y: cy - r * Math.sin(th) } });
     return [h0, h1];
   });
+  const dragOnset = perHandDragOnset(frames);
   const onset = onsetT(frames, (f) => {
     const [a, b] = f.hands;
     if (!a || !b || !isPinched(a) || !isPinched(b)) return false;
@@ -211,10 +231,10 @@ function twoHandRotatePositive(): LabeledSession {
       { gesture: 'two-hand-rotate', onset, offset: tAt(58) },
       // Same as the scale fixture: real pinches and real per-hand translation, both
       // superseded by the two-hand gesture once the bearing changes enough.
-      { gesture: 'pinch', onset: frames[0]!.t, offset: onset },
-      { gesture: 'pinch', onset: frames[0]!.t, offset: onset },
-      { gesture: 'pinch-drag', onset: frames[0]!.t, offset: onset },
-      { gesture: 'pinch-drag', onset: frames[0]!.t, offset: onset },
+      { gesture: 'pinch', onset: frames[0]!.t, offset: dragOnset },
+      { gesture: 'pinch', onset: frames[0]!.t, offset: dragOnset },
+      { gesture: 'pinch-drag', onset: dragOnset, offset: onset },
+      { gesture: 'pinch-drag', onset: dragOnset, offset: onset },
     ]),
     target: 'two-hand-rotate',
     expectFire: true,
@@ -240,7 +260,18 @@ function dragTooSlow(): LabeledSession {
     const x = 0.5 + 0.03 * ramp(i, 26, 74); // total 0.03 < DRAG_THRESH, and slow
     return [pose('pinch', { pinchAmount: amt, center: { x, y: 0.5 } })];
   });
-  return { session: session('drag-too-slow', frames, []), target: 'pinch-drag', expectFire: false, latencyBudgetMs: 160 };
+  // The hand does close into a real pinch — that part must fire. What must NOT fire is
+  // pinch-drag, because the hand never reaches drag speed. Labeling the pinch keeps the
+  // negative honest: it isolates the drag threshold instead of also asserting no pinch.
+  const pinchOnset = onsetT(frames, (f) => isPinched(f.hands[0]!));
+  return {
+    session: session('drag-too-slow', frames, [
+      { gesture: 'pinch', onset: pinchOnset, offset: frames[frames.length - 1]!.t },
+    ]),
+    target: 'pinch-drag',
+    expectFire: false,
+    latencyBudgetMs: 160,
+  };
 }
 
 function swipeTooSlow(): LabeledSession {

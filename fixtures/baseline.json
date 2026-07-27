@@ -1,0 +1,75 @@
+{
+  "metrics": [
+    {
+      "gesture": "dwell-select",
+      "tp": 4,
+      "fp": 0,
+      "fn": 0,
+      "precision": 1,
+      "recall": 1,
+      "fpPerMin": 0,
+      "latencyMs": 33
+    },
+    {
+      "gesture": "palm-push",
+      "tp": 4,
+      "fp": 0,
+      "fn": 0,
+      "precision": 1,
+      "recall": 1,
+      "fpPerMin": 0,
+      "latencyMs": 0
+    },
+    {
+      "gesture": "pinch",
+      "tp": 25,
+      "fp": 0,
+      "fn": 0,
+      "precision": 1,
+      "recall": 1,
+      "fpPerMin": 0,
+      "latencyMs": 0
+    },
+    {
+      "gesture": "pinch-drag",
+      "tp": 20,
+      "fp": 0,
+      "fn": 0,
+      "precision": 1,
+      "recall": 1,
+      "fpPerMin": 0,
+      "latencyMs": 0
+    },
+    {
+      "gesture": "swipe",
+      "tp": 4,
+      "fp": 0,
+      "fn": 0,
+      "precision": 1,
+      "recall": 1,
+      "fpPerMin": 0,
+      "latencyMs": 0
+    },
+    {
+      "gesture": "two-hand-rotate",
+      "tp": 4,
+      "fp": 0,
+      "fn": 0,
+      "precision": 1,
+      "recall": 1,
+      "fpPerMin": 0,
+      "latencyMs": 0
+    },
+    {
+      "gesture": "two-hand-scale",
+      "tp": 4,
+      "fp": 0,
+      "fn": 0,
+      "precision": 1,
+      "recall": 1,
+      "fpPerMin": 0,
+      "latencyMs": 0
+    }
+  ],
+  "sessions": 34
+}

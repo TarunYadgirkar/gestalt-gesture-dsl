@@ -64,8 +64,13 @@ export function pose(name: PoseName, opts: PoseOptions = {}): HandSample {
     const amt = opts.pinchAmount ?? 1;
     const tt = local[LM.THUMB_TIP]!, it = local[LM.INDEX_TIP]!;
     const mid: P2 = [(tt[0] + it[0]) / 2, (tt[1] + it[1]) / 2];
-    local[LM.THUMB_TIP] = lerp2(tt, mid, amt);
-    local[LM.INDEX_TIP] = lerp2(it, mid, amt);
+    // Fingertips touch, they do not interpenetrate. A full pinch that collapsed the
+    // gap to exactly zero would make every distance threshold below the open-hand
+    // spacing pass identically, so fixtures could not discriminate a tight threshold
+    // from a loose one. MAX_CLOSE leaves the ~0.02 residual a real hand shows.
+    const MAX_CLOSE = 0.9;
+    local[LM.THUMB_TIP] = lerp2(tt, mid, amt * MAX_CLOSE);
+    local[LM.INDEX_TIP] = lerp2(it, mid, amt * MAX_CLOSE);
     local[LM.THUMB_IP] = lerp2(local[LM.THUMB_IP]!, mid, amt * 0.4);
     local[LM.INDEX_DIP] = lerp2(local[LM.INDEX_DIP]!, mid, amt * 0.4);
   } else if (name === 'fist') {
