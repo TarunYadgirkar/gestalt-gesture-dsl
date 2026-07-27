@@ -4,30 +4,39 @@ Updated continuously. Assume the reader is catching up cold.
 
 ## Done
 - Planning docs: SPEC.md, DECISIONS.md, DEPENDENCIES.md.
-- Git repo + scaffold (package.json, tsconfig, vitest, deps installed).
-- Type contract: src/types.ts, src/landmarks.ts (geometry + named points).
-- **Task #1 DONE**: synthetic generator (poser + sequences) with 7 positive
-  fixtures (exact onset labels) + 6 adversarial negatives + seeded dropout.
-  Sanity test green: 13/13 (test/synthetic.test.ts).
+- Git repo + scaffold. Pushed to https://github.com/TarunYadgirkar/gestalt-gesture-dsl
+- **Synthetic generator** — poser (21-landmark MediaPipe poses) + sequence builders:
+  7 positive fixtures with exact onset labels, 6 adversarial negatives, seeded dropout.
+- **Acceptance suite authored first, watched fail** (27 RED), then driven green.
+- **DSL + compiler** — zod-validated YAML grammar, recursive-descent expression
+  language, predicate compiler with shared hysteresis latches in dependency order,
+  `compile()` producing an inspectable machine with `describe()` / `toDSL()`.
+- **Runtime recognizer** — spatial hand identity, per-hand instancing, dropout grace
+  with `tracking_lost`, snapshot/rollback competition with priority preemption,
+  confidence from threshold depth, transition trace.
+- **Eval harness** — session record/replay, precision/recall/FP-per-min/latency,
+  baseline regression diffing, self-contained HTML report with SVG timelines, CLI.
+
+**145 tests green. Typecheck clean. Corpus: 34 sessions, 100% precision and recall,
+0 FP/min.**
 
 ## In progress
-- Task #2: authoring acceptance suite. DSL grammar locked (see gestures/*.yaml
-  design in this file's Notes). Next: write 7 gesture YAMLs + public API stubs +
-  acceptance tests (detection/negatives/dropout/competing/roundtrip), watch RED.
+- Task #6: browser demo. Scope expanded per user request — not just a webcam canvas
+  but a properly designed multi-page site: live gesture events, a visual state-machine
+  inspector, and a "what is this" explainer page. Then deploy to Vercel.
 
-## Next (ordered per autonomy contract)
-1. Scaffold + install deps.
-2. Public API type surface (src/index.ts + types) — signatures only, throwing.
-3. Synthetic data generator (needed to author tests).
-4. Acceptance test suite (MUST fail): detection, negatives, dropout, competing, round-trip.
-5. Implement: landmarks/geometry → DSL parse/validate → compile → machine step →
-   runtime (identity, dropout, resolver) → until acceptance green.
-6. Eval harness: session format → metrics → regression → HTML report.
-7. Browser demo (Vite + MediaPipe).
-8. README.md + HANDOFF.md.
+## Next
+1. Demo: webcam + MediaPipe HandLandmarker, live event feed, state machine inspector.
+2. Explainer page (what the system is, how the DSL works, why it fires).
+3. Deploy to Vercel.
+4. README.md + HANDOFF.md.
 
 ## Blocked
 - (none)
 
 ## Notes
 - npm not pnpm (D2). Determinism enforced: no wall-clock/RNG in runtime (D9).
+- Regression detector verified non-vacuous: tightening the pinch threshold produces
+  `FAIL pinch.recall 1.000 -> 0.000`, exit code 1.
+- Two ground-truth labeling bugs and one unrealistic-geometry bug were found *by the
+  harness*, which is the harness earning its keep.

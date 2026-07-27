@@ -71,6 +71,54 @@ describe('detection: continuous gestures stream update data', () => {
   });
 });
 
+describe('detection: live inspection while running', () => {
+  it('reports the current state of every live machine instance', () => {
+    const fixture = positiveFixtures().find((f) => f.target === 'pinch')!;
+    const rec = new Recognizer(machines);
+    const label = fixture.session.labels[0]!;
+
+    let duringPinch: ReturnType<Recognizer['inspect']> = [];
+    for (const f of fixture.session.frames) {
+      rec.push(f);
+      if (f.t === label.onset + 100) duringPinch = rec.inspect();
+    }
+
+    const pinch = duringPinch.find((i) => i.gesture === 'pinch')!;
+    expect(pinch.state).toBe('closed');
+    expect(pinch.active).toBe(true);
+    expect(pinch.hands).toHaveLength(1);
+  });
+
+  it('exposes each candidate transition of the current state with its live verdict', () => {
+    // This is the inspector's whole purpose: not just "which state", but which guard
+    // is currently true and what it would take to move.
+    const fixture = positiveFixtures().find((f) => f.target === 'pinch')!;
+    const rec = new Recognizer(machines);
+    const label = fixture.session.labels[0]!;
+
+    let idle: ReturnType<Recognizer['inspect']> = [];
+    let held: ReturnType<Recognizer['inspect']> = [];
+    for (const f of fixture.session.frames) {
+      rec.push(f);
+      if (f.t === label.onset - 200) idle = rec.inspect();
+      if (f.t === label.onset + 100) held = rec.inspect();
+    }
+
+    const before = idle.find((i) => i.gesture === 'pinch')!;
+    expect(before.state).toBe('idle');
+    const openGuard = before.guards.find((g) => g.to === 'closed')!;
+    expect(openGuard.passed, 'hand is still open, so the pinch guard must read false').toBe(false);
+    expect(openGuard.guard).toContain('distance');
+    expect(openGuard.guard).toMatch(/0\.05/); // the threshold is visible, not hidden
+
+    const after = held.find((i) => i.gesture === 'pinch')!;
+    expect(after.state).toBe('closed');
+    const releaseGuard = after.guards.find((g) => g.to === 'idle')!;
+    expect(releaseGuard.passed, 'still pinched, so the release guard must read false').toBe(false);
+    expect(releaseGuard.reason).toMatch(/separated/i);
+  });
+});
+
 describe('detection: the machine can explain why it fired', () => {
   it('exposes a trace naming the transition that produced the event', () => {
     const fixture = positiveFixtures().find((f) => f.target === 'pinch')!;

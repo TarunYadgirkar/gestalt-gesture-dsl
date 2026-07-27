@@ -1,7 +1,16 @@
 import type { CompiledMachine } from '../dsl/compile.js';
 import type { Frame, GestureEvent, HandId, HandSample, RecognizerOptions, TraceEntry } from '../types.js';
 import { HandTracker, type TrackedHand } from './tracker.js';
-import { MachineInstance } from './instance.js';
+import { MachineInstance, type GuardView } from './instance.js';
+
+export interface InstanceView {
+  gesture: string;
+  priority: number;
+  hands: HandId[];
+  state: string;
+  active: boolean;
+  guards: GuardView[];
+}
 
 const DEFAULT_GRACE_MS = 200;
 const MAX_TRACE = 2000;
@@ -82,14 +91,20 @@ export class Recognizer {
     return gesture ? this.traceLog.filter((e) => e.gesture === gesture) : [...this.traceLog];
   }
 
-  /** Live state of every instance — what the demo's inspector renders. */
-  inspect(): { gesture: string; hands: HandId[]; state: string; active: boolean }[] {
+  /**
+   * Live state of every instance: which state it sits in, and every candidate
+   * transition out of it with this frame's verdict. This is what makes "why did it
+   * fire" answerable while it is still running, not only after the fact.
+   */
+  inspect(): InstanceView[] {
     return [...this.instances.values()]
       .map((i) => ({
         gesture: i.machine.name,
+        priority: i.machine.priority,
         hands: [...i.handIds],
         state: i.machine.states[i.stateIndex]!.id,
         active: i.active,
+        guards: i.guards,
       }))
       .sort((a, b) => byName(a.gesture, b.gesture) || (a.hands[0] ?? 0) - (b.hands[0] ?? 0));
   }

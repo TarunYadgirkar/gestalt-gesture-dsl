@@ -1,0 +1,188 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>What is Gestalt?</title>
+  <meta name="description" content="How a declarative gesture DSL compiles to inspectable state machines, and why the eval harness matters as much as the recognizer." />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><text y='26' font-size='26'>👌</text></svg>" />
+  <link rel="stylesheet" href="/src/styles.css" />
+</head>
+<body>
+  <header class="top">
+    <a class="brand" href="/">gestalt <em>gesture DSL</em></a>
+    <nav class="nav">
+      <a href="/">Live</a>
+      <a href="/about.html" aria-current="page">What is this?</a>
+      <a href="https://github.com/TarunYadgirkar/gestalt-gesture-dsl" target="_blank" rel="noopener">Source</a>
+    </nav>
+  </header>
+
+  <article class="prose">
+    <h1>Gesture recognition you can argue with.</h1>
+    <p class="lede">
+      Most hand-tracking code hides its decisions inside a thicket of if-statements and
+      magic numbers. When a pinch fires at the wrong moment you are left guessing which
+      threshold betrayed you. Gestalt makes gestures declarative, compiles them into
+      state machines you can watch run, and ships the measurement harness that tells you
+      whether a change actually helped.
+    </p>
+
+    <div class="stat-row">
+      <div><b>7</b><span>gestures shipped</span></div>
+      <div><b>147</b><span>tests passing</span></div>
+      <div><b>34</b><span>eval sessions</span></div>
+      <div><b>0</b><span>false positives</span></div>
+    </div>
+
+    <h2>The problem</h2>
+    <p>
+      A gesture is not a pose. It is a pose that persists, changes, and ends — and it has
+      to stay correct while the tracker drops frames, while a hand slides out of view, and
+      while the model swaps its left and right labels mid-motion. Every one of those is a
+      chance to fire when the user did nothing.
+    </p>
+    <p>
+      False positives are the failure mode that matters. A gesture you missed is a gesture
+      the user repeats. A gesture you invented is a document deleted, a menu dismissed, a
+      model flung across the room. So the whole system is built around making spurious
+      fires expensive to introduce and easy to detect.
+    </p>
+
+    <h2>Gestures are data, not code</h2>
+    <p>
+      A gesture definition names its conditions, its states, and the transitions between
+      them. Here is the whole of <code>pinch</code>:
+    </p>
+    <pre><code>name: pinch
+hands: 1
+priority: 10
+
+predicates:
+  pinched:
+    distance: { a: thumb_tip, b: index_tip, lt: 0.05, exit: 0.075 }
+
+states:
+  - id: idle
+    transitions:
+      - when: pinched
+        to: closed
+        reason: thumb and index tips closed
+        emit: { phase: start }
+
+  - id: closed
+    accept: true
+    transitions:
+      - when: { not: pinched }
+        to: idle
+        reason: fingers separated past the release threshold
+        emit: { phase: end }</code></pre>
+
+    <div class="callout">
+      <p style="margin:0">
+        <strong>Two thresholds, not one.</strong> The fingers must close to <code>0.05</code>
+        to latch the pinch on, but must open past <code>0.075</code> to release it. Without
+        that gap, a hand resting exactly on the boundary emits a burst of start/end events
+        as noise pushes it back and forth. This is hysteresis, and it is declared on the
+        condition that needs it rather than bolted on as a global smoothing pass.
+      </p>
+    </div>
+
+    <h3>What the DSL can say</h3>
+    <ul>
+      <li><code>distance</code>, <code>angle</code>, <code>curl</code>, <code>speed</code> — conditions over named landmarks</li>
+      <li><code>all</code> / <code>any</code> / <code>not</code> — composition, with named predicates reusable across states</li>
+      <li><code>min_hold_ms</code> — a guard that must stay true continuously, which is how dwell-select works</li>
+      <li><code>capture</code> — snapshot a value on entering a state, so scale and rotation have an anchor to measure against</li>
+      <li><code>expr</code> — an expression compared to a threshold, e.g. <code>abs(span / capture.anchor_span - 1) &gt; 0.10</code></li>
+    </ul>
+
+    <h2>Compiled, then watched</h2>
+    <p>
+      Each definition compiles to an explicit temporal state machine. Not a black box —
+      <code>describe()</code> returns the states, the transitions, and every guard with its
+      numbers intact, and the running recognizer reports which guard is true right now.
+      That is what the panel on the <a href="/">live page</a> is drawing. When a gesture
+      fires you can point at the transition that fired it and the value that crossed.
+    </p>
+
+    <h2>Four ways hand tracking lies to you</h2>
+    <h3>Frames disappear</h3>
+    <p>
+      A tracker dropping frames mid-gesture must not cancel the gesture. Brief gaps are
+      held through a grace window; only a gap longer than that emits
+      <code>cancel</code> with reason <code>tracking_lost</code> — never a clean
+      <code>end</code>, because the gesture did not end, it was lost. The distinction
+      matters to whatever is downstream.
+    </p>
+    <h3>Hands swap identity</h3>
+    <p>
+      MediaPipe's Left/Right label flips under fast motion. Gestalt treats it as a hint and
+      nothing more: identity comes from spatial continuity, so the hand nearest to where a
+      hand was last frame is that same hand. A single-frame label swap changes nothing.
+    </p>
+    <h3>Hands leave</h3>
+    <p>
+      A hand that exits the frame is dropout for the gestures bound to it. When it returns
+      it is a new hand with a clean machine, not a half-finished gesture resumed from
+      whenever it left.
+    </p>
+    <h3>Gestures overlap</h3>
+    <p>
+      A pinch that starts moving is also a drag. Two pinched hands moving apart are also
+      two drags. Rather than let the first gesture to fire hold the hand forever, a
+      strictly higher-priority gesture preempts it: the incumbent is cancelled with
+      <code>preempted_by:&lt;winner&gt;</code> so its effect can be undone, and the winner
+      starts on the same frame.
+    </p>
+    <div class="figure">
+      <div style="font-family:var(--mono);font-size:12.5px;line-height:2">
+        <div><span class="pill">pinch</span> fires as the fingers close</div>
+        <div style="color:var(--dim)">↓ hand starts translating</div>
+        <div><span class="pill">pinch-drag</span> preempts it &nbsp;<span style="color:var(--alert)">pinch → cancel</span></div>
+        <div style="color:var(--dim)">↓ second hand joins, span changes</div>
+        <div><span class="pill">two-hand-scale</span> preempts that &nbsp;<span style="color:var(--alert)">pinch-drag → cancel</span></div>
+      </div>
+      <figcaption>The escalation ladder, priorities 10 → 20 → 30. Every rung is deterministic: priority, then confidence, then name.</figcaption>
+    </div>
+
+    <h2>The harness is half the project</h2>
+    <p>
+      A recognizer without measurement is a recognizer you cannot tune. Every gesture ships
+      with synthetic sessions whose true onset frames are known exactly, plus adversarial
+      negatives built specifically to be nearly right: a pinch that closes to 88% and stops,
+      a drag too slow to count, a fist travelling at push speed.
+    </p>
+    <p>The harness reports, per gesture:</p>
+    <div class="pill-row">
+      <span class="pill">precision</span>
+      <span class="pill">recall</span>
+      <span class="pill">false positives / minute</span>
+      <span class="pill">latency from true onset</span>
+    </div>
+    <p>
+      Regression mode scores the whole corpus against a committed baseline and fails if any
+      gesture degrades beyond tolerance, so a threshold tweak that quietly costs you recall
+      is caught at the commit rather than in a user's hands.
+    </p>
+
+    <div class="callout">
+      <p style="margin:0">
+        <strong>It has already earned its keep.</strong> The harness caught two mislabeled
+        ground-truth intervals and one unrealistic piece of synthetic geometry — full
+        pinches that closed to a mathematically exact zero gap, which would have made every
+        distance threshold below the open-hand spacing score identically. Fixtures that
+        cannot fail cannot tune anything.
+      </p>
+    </div>
+
+    <h2>Try it</h2>
+    <p>
+      The <a href="/">live page</a> runs the same compiled machines as the test suite — the
+      YAML is bundled from one source, not copied. Replay a recorded session to watch the
+      machines transition with no permissions at all, or turn on the camera and drive them
+      with your own hands. Open any machine card to see its guards evaluating in real time.
+    </p>
+  </article>
+</body>
+</html>

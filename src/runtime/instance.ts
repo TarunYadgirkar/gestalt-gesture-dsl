@@ -11,6 +11,17 @@ export interface StepResult {
   proposedStart?: GestureEvent;
 }
 
+/** A candidate transition out of the current state, with its verdict this frame. */
+export interface GuardView {
+  to: string;
+  guard: string;
+  passed: boolean;
+  minHoldMs: number;
+  /** Milliseconds this guard has been continuously true, for dwell transitions. */
+  heldMs: number;
+  reason?: string;
+}
+
 interface Snapshot {
   stateIndex: number;
   latches: boolean[];
@@ -34,6 +45,8 @@ export class MachineInstance {
   active = false;
   onsetT: number | null = null;
   missingSinceT: number | null = null;
+  /** Verdicts from the most recent step, for the inspector. */
+  guards: GuardView[] = [];
 
   private prevHands: (HandSample | null)[] = [];
   private prevT: number | null = null;
@@ -116,17 +129,28 @@ export class MachineInstance {
     const satisfied: boolean[] = state.transitions.map((tr) => tr.when.eval(ctx, this.latches));
 
     let fired: { tr: CompiledTransition; ti: number } | null = null;
+    const guards: GuardView[] = [];
+
     for (let ti = 0; ti < state.transitions.length; ti++) {
       const tr = state.transitions[ti]!;
       const timer = this.timerIndex(this.stateIndex, ti);
       if (!satisfied[ti]) {
         this.holdSince[timer] = null;
-        continue;
+      } else {
+        if (this.holdSince[timer] === null) this.holdSince[timer] = t;
+        const dwellMet = tr.minHoldMs === 0 || t - this.holdSince[timer]! >= tr.minHoldMs;
+        if (dwellMet && !fired) fired = { tr, ti };
       }
-      if (this.holdSince[timer] === null) this.holdSince[timer] = t;
-      if (tr.minHoldMs > 0 && t - this.holdSince[timer]! < tr.minHoldMs) continue;
-      if (!fired) fired = { tr, ti };
+      guards.push({
+        to: tr.to,
+        guard: tr.when.describe(),
+        passed: satisfied[ti] === true,
+        minHoldMs: tr.minHoldMs,
+        heldMs: this.holdSince[timer] === null ? 0 : t - this.holdSince[timer]!,
+        ...(tr.reason ? { reason: tr.reason } : {}),
+      });
     }
+    this.guards = guards;
 
     this.prevHands = hands;
     this.prevT = t;

@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Gestalt — live gesture recognizer</title>
+  <meta name="description" content="Declarative gesture recognition for hand-tracked interfaces. Watch the state machines decide, in real time." />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><text y='26' font-size='26'>👌</text></svg>" />
+</head>
+<body>
+  <header class="top">
+    <a class="brand" href="/">gestalt <em>gesture DSL</em></a>
+    <nav class="nav">
+      <a href="/" aria-current="page">Live</a>
+      <a href="/about.html">What is this?</a>
+      <a href="https://github.com/TarunYadgirkar/gestalt-gesture-dsl" target="_blank" rel="noopener">Source</a>
+    </nav>
+  </header>
+
+  <main class="panel-grid">
+    <div style="display:flex;flex-direction:column;gap:var(--gap);min-width:0">
+      <section class="card">
+        <div class="card-head">
+          <span>viewport</span>
+          <span class="spacer"></span>
+          <span id="fps">—</span>
+        </div>
+        <div class="stage no-video" id="stage">
+          <video id="video" playsinline muted></video>
+          <canvas id="overlay"></canvas>
+          <div class="stage-empty" id="empty">
+            <h2>Nothing is tracking yet</h2>
+            <p>Replay a recorded session to watch the machines run with no permissions, or turn on the camera to drive them with your own hands.</p>
+          </div>
+          <div class="hud">
+            <span id="hud-hands">hands 0</span>
+            <span id="hud-frames">frames 0</span>
+            <span id="hud-src">idle</span>
+          </div>
+        </div>
+        <div class="controls">
+          <button class="primary" id="btn-replay">Replay a session</button>
+          <select id="fixture" aria-label="Recorded session"></select>
+          <button id="btn-cam">Use my camera</button>
+          <button id="btn-stop" disabled>Stop</button>
+        </div>
+      </section>
+
+      <section class="card tape-wrap">
+        <div class="card-head">
+          <span>event tape</span>
+          <span class="spacer"></span>
+          <span id="ev-count">0 events</span>
+        </div>
+        <div class="tape" id="tape"></div>
+      </section>
+    </div>
+
+    <section class="card inspector">
+      <div class="card-head">
+        <span>state machines</span>
+        <span class="spacer"></span>
+        <span>click a card for its guards</span>
+      </div>
+      <div class="machines" id="machines"></div>
+      <div class="ramp">
+        <span>depth</span>
+        <i class="ramp-bar"></i>
+        <span>near · mid · far</span>
+      </div>
+    </section>
+  </main>
+
+  <script type="module" src="/src/main.ts"></script>
+</body>
+</html>
