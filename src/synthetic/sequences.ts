@@ -86,8 +86,14 @@ function pinchDragPositive(): LabeledSession {
     if (!isPinched(h)) return false;
     return Math.abs(velAxis(palm(h), palm(prev.hands[0]!), 'x')) > V_DRAG;
   });
+  // The hand genuinely pinches before it drags, so 'pinch' is honest ground truth here
+  // too — it is preempted by pinch-drag (SPEC §5 rule 2), not a false positive.
+  const pinchOnset = onsetT(frames, (f) => isPinched(f.hands[0]!));
   return {
-    session: session('pinch-drag-positive', frames, [{ gesture: 'pinch-drag', onset, offset: tAt(72) }]),
+    session: session('pinch-drag-positive', frames, [
+      { gesture: 'pinch-drag', onset, offset: tAt(72) },
+      { gesture: 'pinch', onset: pinchOnset, offset: onset },
+    ]),
     target: 'pinch-drag',
     expectFire: true,
     latencyBudgetMs: 160,
@@ -165,7 +171,12 @@ function twoHandScalePositive(): LabeledSession {
     return Math.abs(sp / anchor - 1) > 0.1;
   });
   return {
-    session: session('two-hand-scale-positive', frames, [{ gesture: 'two-hand-scale', onset, offset: tAt(58) }]),
+    session: session('two-hand-scale-positive', frames, [
+      { gesture: 'two-hand-scale', onset, offset: tAt(58) },
+      // both hands are pinched from frame 0; those pinches are real, then preempted
+      { gesture: 'pinch', onset: frames[0]!.t, offset: onset },
+      { gesture: 'pinch', onset: frames[0]!.t, offset: onset },
+    ]),
     target: 'two-hand-scale',
     expectFire: true,
     latencyBudgetMs: 160,
@@ -191,7 +202,11 @@ function twoHandRotatePositive(): LabeledSession {
     return Math.abs(ang - anchor) > 15;
   });
   return {
-    session: session('two-hand-rotate-positive', frames, [{ gesture: 'two-hand-rotate', onset, offset: tAt(58) }]),
+    session: session('two-hand-rotate-positive', frames, [
+      { gesture: 'two-hand-rotate', onset, offset: tAt(58) },
+      { gesture: 'pinch', onset: frames[0]!.t, offset: onset },
+      { gesture: 'pinch', onset: frames[0]!.t, offset: onset },
+    ]),
     target: 'two-hand-rotate',
     expectFire: true,
     latencyBudgetMs: 160,

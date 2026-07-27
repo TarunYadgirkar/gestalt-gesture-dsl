@@ -1,0 +1,49 @@
+name: dwell-select
+hands: 1
+priority: 15
+description: >
+  Point at something and hold still for 600ms. The canonical hands-free select.
+  min_hold_ms is the dwell: the guard must stay continuously true for the whole
+  window, so any wobble past the stillness threshold resets the timer.
+
+predicates:
+  pointing:
+    all:
+      - curl: { finger: index, lt: 0.30 }
+      - curl: { finger: middle, gt: 0.40 }
+  # Generous exit band: hand tremor should not restart a nearly-complete dwell.
+  still:
+    speed: { point: index_tip, lt: 0.15, exit: 0.30 }
+  ready:
+    all: [pointing, still]
+
+states:
+  - id: idle
+    transitions:
+      - when: ready
+        to: dwelling
+        reason: pointing pose settled
+
+  - id: dwelling
+    transitions:
+      - when: { not: ready }
+        to: idle
+        reason: moved or lost the pose before the dwell completed
+      - when: ready
+        to: selected
+        min_hold_ms: 600
+        reason: held still for the full dwell window
+        emit:
+          phase: start
+          data:
+            x: x(index_tip)
+            y: y(index_tip)
+
+  - id: selected
+    accept: true
+    transitions:
+      - when: { not: still }
+        to: idle
+        reason: hand moved off the target
+        emit:
+          phase: end

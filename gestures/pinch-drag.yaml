@@ -1,0 +1,56 @@
+name: pinch-drag
+hands: 1
+priority: 20
+description: >
+  A pinch that then translates. Arms on pinch close (anchoring the origin), fires
+  once the pinched hand exceeds drag speed, and streams dx/dy updates until release.
+  Higher priority than pinch, so it preempts the pinch already in flight.
+
+predicates:
+  pinched:
+    distance: { a: thumb_tip, b: index_tip, lt: 0.05, exit: 0.075 }
+  # Loose exit so a momentary pause mid-drag does not end the gesture.
+  moving:
+    speed: { point: palm_center, gt: 0.25, exit: 0.10 }
+
+states:
+  - id: idle
+    transitions:
+      - when: pinched
+        to: armed
+        reason: pinch closed, waiting for motion
+
+  - id: armed
+    # Anchor captured on entry; self-transitions in 'dragging' will not overwrite it.
+    capture:
+      anchor_x: x(palm_center)
+      anchor_y: y(palm_center)
+    transitions:
+      - when: { not: pinched }
+        to: idle
+        reason: released before any drag motion
+      - when: { all: [pinched, moving] }
+        to: dragging
+        reason: pinched hand exceeded drag speed
+        emit:
+          phase: start
+          data:
+            dx: x(palm_center) - capture.anchor_x
+            dy: y(palm_center) - capture.anchor_y
+
+  - id: dragging
+    accept: true
+    transitions:
+      - when: { not: pinched }
+        to: idle
+        reason: pinch released, drag complete
+        emit:
+          phase: end
+      - when: pinched
+        to: dragging
+        reason: drag continuing
+        emit:
+          phase: update
+          data:
+            dx: x(palm_center) - capture.anchor_x
+            dy: y(palm_center) - capture.anchor_y

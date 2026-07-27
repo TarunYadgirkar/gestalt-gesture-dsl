@@ -79,11 +79,16 @@ Leaf predicates evaluate against the current frame (+ prev frame for velocity):
 { distance: { a: point, b: point, lt|lte|gt|gte: number } }
 { angle:    { at: point, from: point, to: point, lt|gt: number } }   # degrees
 { curl:     { finger: thumb|index|middle|ring|pinky, gt|lt: number } } # 0=straight..1=fist
-{ speed:    { point: point, gt|lt: number } }        # normalized units / second
-{ pointing: { finger: ..., dir: up|down|left|right, min_dot: number } }
-{ hands_count: { eq|gte|lte: number } }
-{ tracked:  { hand: any|left|right|0|1 } }            # is the referenced hand present
+{ speed:    { point: point, axis: x|y|z|planar?, gt|lt: number } }   # normalized units / second
+{ expr:     { value: "<expr>", gt|lt: number } }      # §2.4 expression vs a threshold
+{ tracked:  { hand: any|h0|h1 } }                     # is the referenced hand present
 ```
+
+`speed` defaults to `axis: planar` (magnitude in xy). With an explicit axis the value is
+**signed**, so `{ axis: z, lt: -0.8 }` means "moving toward the camera fast".
+
+`expr` is what makes ratio/delta conditions expressible without new predicate kinds —
+e.g. `abs(span / capture.anchor_span - 1) > 0.1` for scale.
 
 Two-hand references: a point may be prefixed `h0.` / `h1.` (role slots) e.g. `h0.index_tip`.
 Cross-hand derived: `span` = distance(h0.palm_center, h1.palm_center);
@@ -119,10 +124,21 @@ EmitSpec = {
 }
 ```
 
-`<expr>` mini-language: point/scalar references and arithmetic over predicate-style
-terms — `distance(h0.palm_center,h1.palm_center)`, `span / capture.anchor_span`,
-`pair_angle - capture.anchor_angle`, `dx(index_tip)`, `dy(index_tip)`. Enough to
-express scale factor, rotation delta, drag delta.
+`<expr>` mini-language — infix arithmetic (`+ - * /`, parens, numbers) over:
+
+| term | meaning |
+|---|---|
+| `x(p)` `y(p)` `z(p)` | coordinate of point `p` |
+| `dx(p)` `dy(p)` `dz(p)` | per-frame delta of `p` (0 on the first frame) |
+| `distance(a,b)` | 3D distance between two points |
+| `curl(finger)` | finger curl 0..1 |
+| `speed(p)` | planar speed of `p`, units/s |
+| `span` | distance(h0.palm_center, h1.palm_center) — 2-hand only |
+| `pair_angle` | atan2 angle of the h0→h1 palm vector, degrees, y-up — 2-hand only |
+| `capture.<key>` | scalar snapshotted on state entry |
+| `abs(e)` `adiff(a,b)` | absolute value; signed angle difference wrapped to (-180,180] |
+
+Enough to express scale factor, rotation delta, and drag delta.
 
 ### 2.5 Validation
 
@@ -163,14 +179,19 @@ Per-frame algorithm:
 1. **Hand identity** — assign stable `HandId`s by nearest-wrist continuity to the
    previous frame (Hungarian-lite greedy), NOT by trusting the raw Left/Right label
    frame-to-frame. Handedness label kept as a hint only. Resolves label flips (§6).
-2. **Role binding** — for each machine, bind role slots h0/h1 to hand ids. Once a
-   machine is mid-gesture (past initial), bindings are sticky.
+2. **Instancing & role binding** — a `hands: 1` definition gets one machine *instance
+   per tracked hand* (so a pinch is recognized on either hand independently); a
+   `hands: 2` definition gets one instance bound to both. Role slots h0/h1 bind in
+   ascending HandId order. Once an instance is mid-gesture (past its initial state),
+   its binding is sticky until it resets.
 3. **Dropout / leaving frame** — if a bound hand is missing this frame, start a grace
    timer (`options.dropoutGraceMs`, default 200). Within grace: machine holds state,
    guards that need the missing hand evaluate false but do not cancel. Beyond grace:
    emit `cancel` (reason `tracking_lost`) and reset the machine.
 4. **Step machines** — evaluate transitions of each machine's current state in order;
    first satisfied guard (respecting `min_hold_ms` dwell timers and hysteresis) fires.
+   A transition whose `to` equals the current state is a **self-transition**: it emits
+   but does NOT re-run the state's `capture` (so anchors survive `update` ticks).
 5. **Resolve competition** (§5) — filter simultaneously-firing gestures that claim
    overlapping hands.
 6. Collect emitted events, stamp `latencyMs` when the machine records a true onset.
@@ -181,16 +202,28 @@ deep inside). Exact formula in code, covered by a unit test.
 
 ## 5. Competing gestures (deterministic resolution)
 
-When ≥2 machines would emit a `start`/`accept` on the same frame and their claimed hand
-sets intersect:
+Two machine instances **compete** when their claimed `HandId` sets intersect. Resolution
+runs every frame, over the instances that want to emit a `start` this frame:
 
-1. An active (already-started) gesture **holds its claim** on its hands; newcomers that
-   need those hands are suppressed that frame.
-2. Among fresh competitors, pick the winner by, in order: (a) higher `priority`,
-   (b) higher `confidence`, (c) lexicographically smaller `name`. Fully deterministic.
-3. Losers stay in / return to their pre-fire state; no event emitted.
+1. **Fresh vs fresh** — pick the winner by, in order: (a) higher `priority`,
+   (b) higher `confidence`, (c) lexicographically smaller `name`. Total order, no ties,
+   no wall-clock, no RNG. Losers roll back to their pre-fire state and emit nothing.
+2. **Fresh vs active** — an already-started gesture holds its claim, *unless* the
+   newcomer has **strictly higher `priority`**. Then the newcomer **preempts**: the
+   active gesture is reset and emits `cancel` with
+   `reason: 'preempted_by:<winner>'`, and the newcomer starts on the same frame.
+   Equal or lower priority ⇒ the newcomer is suppressed while the incumbent stays active.
+3. A preempted gesture may re-arm later; it is not permanently locked out.
 
-Documented and asserted (§Acceptance/competing).
+Rule 2 is what makes escalation work: a `pinch` (priority 10) that starts to move is
+superseded by `pinch-drag` (priority 20) rather than blocking it forever, and both
+one-hand pinches are superseded by `two-hand-scale` (priority 30) when the second hand
+joins. The `cancel` event tells a consumer to undo any effect the pinch already applied.
+
+Shipped priorities: two-hand-scale/rotate 30 > pinch-drag 20 > dwell-select/palm-push 15
+> pinch 10 > swipe 5.
+
+Documented and asserted (§11 competing).
 
 ## 6. Robustness requirements
 

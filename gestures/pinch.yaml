@@ -1,0 +1,32 @@
+name: pinch
+hands: 1
+priority: 10
+description: >
+  Thumb and index tip close together. Fires the moment the fingers meet and holds
+  until they separate. Escalates: pinch-drag and the two-hand gestures preempt it.
+
+predicates:
+  # Hysteresis: must close to 0.05 to latch on, must open past 0.075 to release.
+  # Stops boundary flicker producing start/end storms.
+  pinched:
+    distance: { a: thumb_tip, b: index_tip, lt: 0.05, exit: 0.075 }
+
+states:
+  - id: idle
+    transitions:
+      - when: pinched
+        to: closed
+        reason: thumb and index tips closed
+        emit:
+          phase: start
+          data:
+            gap: distance(thumb_tip,index_tip)
+
+  - id: closed
+    accept: true
+    transitions:
+      - when: { not: pinched }
+        to: idle
+        reason: fingers separated past the release threshold
+        emit:
+          phase: end

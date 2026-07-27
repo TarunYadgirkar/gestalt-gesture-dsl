@@ -1,0 +1,48 @@
+name: swipe
+hands: 1
+priority: 5
+description: >
+  Fast lateral sweep of an open hand. Deliberately the lowest priority gesture:
+  anything more specific that also matches should win. The speed floor is high
+  enough that ordinary hand repositioning does not trigger it.
+
+predicates:
+  open_hand:
+    all:
+      - curl: { finger: index, lt: 0.40 }
+      - curl: { finger: middle, lt: 0.40 }
+  not_pinched:
+    distance: { a: thumb_tip, b: index_tip, gt: 0.08 }
+  fast_right:
+    speed: { point: palm_center, axis: x, gt: 1.5, exit: 0.5 }
+  fast_left:
+    speed: { point: palm_center, axis: x, lt: -1.5, exit: -0.5 }
+
+states:
+  - id: idle
+    transitions:
+      - when: { all: [open_hand, not_pinched, fast_right] }
+        to: swiping
+        reason: open hand crossed the rightward speed floor
+        emit:
+          phase: start
+          data:
+            vx: speed(palm_center)
+            dir: 1
+      - when: { all: [open_hand, not_pinched, fast_left] }
+        to: swiping
+        reason: open hand crossed the leftward speed floor
+        emit:
+          phase: start
+          data:
+            vx: speed(palm_center)
+            dir: -1
+
+  - id: swiping
+    accept: true
+    transitions:
+      - when: { not: { any: [fast_right, fast_left] } }
+        to: idle
+        reason: sweep decelerated
+        emit:
+          phase: end

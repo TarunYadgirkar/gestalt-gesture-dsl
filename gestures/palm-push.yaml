@@ -1,0 +1,36 @@
+name: palm-push
+hands: 1
+priority: 15
+description: >
+  Flat open palm driven toward the camera. The open-hand requirement is what
+  separates it from a punch: a fist moving at the same speed must not fire.
+  Signed z speed — negative z is toward the camera in MediaPipe space.
+
+predicates:
+  open_palm:
+    all:
+      - curl: { finger: index, lt: 0.35 }
+      - curl: { finger: middle, lt: 0.35 }
+      - curl: { finger: ring, lt: 0.35 }
+  pushing:
+    speed: { point: palm_center, axis: z, lt: -0.8, exit: -0.3 }
+
+states:
+  - id: idle
+    transitions:
+      - when: { all: [open_palm, pushing] }
+        to: pushed
+        reason: open palm accelerated toward the camera
+        emit:
+          phase: start
+          data:
+            depth: z(palm_center)
+
+  - id: pushed
+    accept: true
+    transitions:
+      - when: { not: pushing }
+        to: idle
+        reason: push decelerated
+        emit:
+          phase: end

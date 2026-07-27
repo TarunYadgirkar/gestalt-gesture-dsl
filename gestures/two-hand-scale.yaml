@@ -1,0 +1,55 @@
+name: two-hand-scale
+hands: 2
+priority: 30
+description: >
+  Both hands pinched, then the distance between the palms changes. Anchors the span
+  on the frame both pinches latch, fires once the span deviates 10% from that anchor,
+  and reports the live scale factor. Preempts the two single-hand pinches.
+
+predicates:
+  both_pinched:
+    all:
+      - distance: { a: h0.thumb_tip, b: h0.index_tip, lt: 0.05, exit: 0.075 }
+      - distance: { a: h1.thumb_tip, b: h1.index_tip, lt: 0.05, exit: 0.075 }
+  # 10% to trigger, 5% to release — hysteresis keeps a hand hovering at the
+  # threshold from chattering start/end.
+  span_changed:
+    expr: { value: abs(span / capture.anchor_span - 1), gt: 0.10, exit: 0.05 }
+
+states:
+  - id: idle
+    transitions:
+      - when: both_pinched
+        to: anchored
+        reason: both hands pinched
+
+  - id: anchored
+    capture:
+      anchor_span: span
+    transitions:
+      - when: { not: both_pinched }
+        to: idle
+        reason: a pinch released before the span changed
+      - when: { all: [both_pinched, span_changed] }
+        to: scaling
+        reason: palm separation deviated from the anchored span
+        emit:
+          phase: start
+          data:
+            scale: span / capture.anchor_span
+
+  - id: scaling
+    accept: true
+    transitions:
+      - when: { not: both_pinched }
+        to: idle
+        reason: a pinch released, scale complete
+        emit:
+          phase: end
+      - when: both_pinched
+        to: scaling
+        reason: scale continuing
+        emit:
+          phase: update
+          data:
+            scale: span / capture.anchor_span

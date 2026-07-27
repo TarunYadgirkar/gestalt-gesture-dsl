@@ -64,6 +64,30 @@ Current MediaPipe web API (supersedes legacy @mediapipe/hands). Loaded in the de
 the core library has zero MediaPipe dependency (it just consumes the frame schema), so
 Node tests never touch it.
 
+## D15 — Competition allows preemption by strictly-higher priority
+Original §5 draft said "active gesture always holds its claim". That deadlocks the most
+important real case: a `pinch` fires the instant the fingers close, so it is always
+already active by the time the hand starts moving — `pinch-drag` could never fire. Fixed
+by letting a strictly-higher-priority newcomer preempt the incumbent, which emits
+`cancel(reason='preempted_by:<winner>')`. Still fully deterministic (priority is static,
+strictly-greater is antisymmetric so no cycles). This is also the honest UX: the consumer
+gets told to undo the pinch effect. Alternative considered — requiring a pinch to be
+*still* for 100ms before firing — was rejected: it makes every pinch laggy to remove a
+conflict that preemption models better.
+
+## D16 — `hands: 1` gestures instantiate per tracked hand
+A one-hand definition with two hands on screen must recognize independently on each.
+The runtime keeps a machine instance per HandId for 1-hand definitions, and a single
+instance for 2-hand ones. Consequence: in the two-hand fixtures `pinch` legitimately
+fires on both hands before the two-hand gesture preempts it — so those fixtures carry
+honest `pinch` ground-truth labels rather than being treated as false positives.
+
+## D17 — `expr` predicate instead of bespoke ratio/delta predicate kinds
+Scale needs `span / anchor_span`, rotate needs `angle_delta`. Rather than one predicate
+kind per gesture family, there is a single `expr` predicate comparing a mini-language
+expression to a threshold. Keeps the DSL small and lets new gestures be added without
+touching the compiler.
+
 ## D14 — Repo location: /Users/tarunyadgirkar/Claude/gestalt
 cwd already holds the user's projects. Memory notes a ~/TarunsCode convention, but that
 tree isn't present here and cwd is where the session launched. Self-contained git repo.

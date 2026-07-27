@@ -1,0 +1,53 @@
+name: two-hand-rotate
+hands: 2
+priority: 30
+description: >
+  Both hands pinched, then the palm-to-palm vector rotates. Uses adiff() so the
+  ±180 wrap never produces a phantom 350-degree jump. Distinct from two-hand-scale:
+  that watches span, this watches bearing.
+
+predicates:
+  both_pinched:
+    all:
+      - distance: { a: h0.thumb_tip, b: h0.index_tip, lt: 0.05, exit: 0.075 }
+      - distance: { a: h1.thumb_tip, b: h1.index_tip, lt: 0.05, exit: 0.075 }
+  turned:
+    expr: { value: abs(adiff(pair_angle,capture.anchor_angle)), gt: 15, exit: 8 }
+
+states:
+  - id: idle
+    transitions:
+      - when: both_pinched
+        to: anchored
+        reason: both hands pinched
+
+  - id: anchored
+    capture:
+      anchor_angle: pair_angle
+    transitions:
+      - when: { not: both_pinched }
+        to: idle
+        reason: a pinch released before any rotation
+      - when: { all: [both_pinched, turned] }
+        to: rotating
+        reason: palm-to-palm bearing rotated past the trigger angle
+        emit:
+          phase: start
+          data:
+            degrees: adiff(pair_angle,capture.anchor_angle)
+
+  - id: rotating
+    accept: true
+    transitions:
+      - when: { not: both_pinched }
+        to: idle
+        reason: a pinch released, rotation complete
+        emit:
+          phase: end
+      - when: both_pinched
+        to: rotating
+        reason: rotation continuing
+        emit:
+          phase: update
+          data:
+            degrees: adiff(pair_angle,capture.anchor_angle)
