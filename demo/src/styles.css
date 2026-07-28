@@ -459,6 +459,10 @@ select {
 }
 
 @media (max-width: 940px) {
+  /* Single column: the inspector sits below the viewport, so pinning it to the
+     screen would trap the machine list in a short scroller. Let it run full height. */
   .panel-grid { grid-template-columns: minmax(0, 1fr); }
-  .machines { max-height: none; }
+  .card.inspector { position: static; max-height: none; }
+  .machines { overflow-y: visible; }
+  .stage { aspect-ratio: 4 / 3; }
 }
