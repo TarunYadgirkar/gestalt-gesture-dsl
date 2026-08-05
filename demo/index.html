@@ -5,11 +5,27 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Gestalt — live gesture recognizer</title>
   <meta name="description" content="Declarative gesture recognition for hand-tracked interfaces. Watch the state machines decide, in real time." />
+  <link rel="canonical" href="https://gestalt-pearl.vercel.app/" />
+  <meta property="og:title" content="Gestalt — live gesture recognizer" />
+  <meta property="og:description" content="Declarative gesture recognition for hand-tracked interfaces. Watch the state machines decide, in real time." />
+  <meta property="og:type" content="website" />
+  <meta property="og:url" content="https://gestalt-pearl.vercel.app/" />
+  <meta name="twitter:card" content="summary" />
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><text y='26' font-size='26'>👌</text></svg>" />
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "WebApplication",
+    "name": "Gestalt",
+    "description": "Declarative gesture recognition for hand-tracked spatial interfaces: gestures written as YAML compile to inspectable state machines, measured by a tunable eval harness.",
+    "url": "https://gestalt-pearl.vercel.app/",
+    "applicationCategory": "DeveloperApplication"
+  }
+  </script>
 </head>
 <body>
   <header class="top">
-    <a class="brand" href="/">gestalt <em>gesture DSL</em></a>
+    <h1><a class="brand" href="/">gestalt <em>gesture DSL</em></a></h1>
     <nav class="nav">
       <a href="/" aria-current="page">Live</a>
       <a href="/about.html">What is this?</a>
@@ -31,6 +47,7 @@
           <div class="stage-empty" id="empty">
             <h2>Nothing is tracking yet</h2>
             <p>Replay a recorded session to watch the machines run with no permissions, or turn on the camera to drive them with your own hands.</p>
+            <noscript><p>The live recognizer needs JavaScript. Read <a href="/about.html">what Gestalt is</a> instead.</p></noscript>
           </div>
           <div class="hud">
             <span id="hud-hands">hands 0</span>

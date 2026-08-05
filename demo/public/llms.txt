@@ -1,0 +1,17 @@
+# Gestalt
+
+> Declarative gesture recognition for hand-tracked spatial interfaces, plus a tunable
+> eval harness. Gestures are written as YAML, compiled into explicit temporal state
+> machines you can inspect while they run, and measured against labeled sessions
+> (precision, recall, false positives per minute, latency from true onset) so you can
+> tell whether a threshold change actually helped.
+
+The live demo replays recorded hand-tracking sessions — or uses your camera via
+MediaPipe — through the same compiled machines as the test suite, with a real-time
+inspector showing every state, transition, and guard value.
+
+## Links
+
+- Live demo: https://gestalt-pearl.vercel.app/
+- How it works: https://gestalt-pearl.vercel.app/about.html
+- Source: https://github.com/TarunYadgirkar/gestalt-gesture-dsl

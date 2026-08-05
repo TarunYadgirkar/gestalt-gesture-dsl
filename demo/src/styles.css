@@ -67,6 +67,8 @@ a { color: inherit; }
   z-index: 20;
 }
 
+.top h1 { margin: 0; font-size: inherit; }
+
 .brand {
   display: flex;
   align-items: baseline;
