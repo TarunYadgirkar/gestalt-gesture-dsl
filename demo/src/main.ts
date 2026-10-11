@@ -1,6 +1,7 @@
 import './styles.css';
 import { Recognizer, compileGestures, type Frame, type GestureEvent } from '../../src/browser.js';
 import { positiveFixtures } from '../../src/synthetic/sequences.js';
+import type { LabeledSession } from '../../src/synthetic/sequences.js';
 import { GESTURE_SOURCES } from './gestures.js';
 import { drawFrame } from './render.js';
 import { Inspector } from './inspector.js';
@@ -16,15 +17,28 @@ const machinesEl = $('machines');
 const fixtureSel = $<HTMLSelectElement>('fixture');
 const btnReplay = $<HTMLButtonElement>('btn-replay');
 const btnCam = $<HTMLButtonElement>('btn-cam');
+const btnCamLabel = $('btn-cam-label');
 const btnStop = $<HTMLButtonElement>('btn-stop');
+const hudSrc = $('hud-src');
+const progressBar = $('progress-bar');
 
 const machines = compileGestures(Object.values(GESTURE_SOURCES));
 const inspector = new Inspector(machinesEl, machines);
+
+// The richest default: a pinch that starts moving, so the first thing a visitor sees
+// is pinch firing and then being preempted by pinch-drag.
+const DEFAULT_FIXTURE = 'pinch-drag';
+const MAX_TAPE = 60;
+const UPDATE_SAMPLE = 6; // keep one update tick in six so lifecycle events stay visible
+const REST_MS = 700; // beat between replay loops, so the reset is legible
+
+const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 let recognizer = new Recognizer(machines);
 let frameCount = 0;
 let eventCount = 0;
 let stopCurrent: (() => void) | null = null;
+let replaying = false;
 
 const fixtures = positiveFixtures();
 for (const f of fixtures) {
@@ -33,32 +47,42 @@ for (const f of fixtures) {
   opt.textContent = f.target;
   fixtureSel.append(opt);
 }
+fixtureSel.value = DEFAULT_FIXTURE;
+
+const selectedFixture = (): LabeledSession =>
+  fixtures.find((f) => f.target === fixtureSel.value) ?? fixtures[0]!;
 
 // ---- event tape ----
 
-const MAX_TAPE = 60;
+function describeEvent(e: GestureEvent): string {
+  const bits = [`${Math.round(e.t)}ms`, `hand ${e.hands.join('+')}`];
+  if (e.phase !== 'cancel' && e.phase !== 'end') bits.push(`conf ${e.confidence.toFixed(2)}`);
+  if (e.reason) bits.push(e.reason);
+  for (const [k, val] of Object.entries(e.data ?? {})) bits.push(`${k} ${val.toFixed(2)}`);
+  return bits.join('  ');
+}
+
+function eventNode(e: GestureEvent, animate: boolean): HTMLLIElement {
+  const node = document.createElement('li');
+  node.className = `ev ${e.phase}${animate ? ' fresh' : ''}`;
+  const title = document.createElement('span');
+  title.className = 'ev-title';
+  const phase = document.createElement('span');
+  phase.className = 'ev-phase';
+  phase.textContent = e.phase;
+  title.append(e.gesture, phase);
+  const meta = document.createElement('span');
+  meta.className = 'ev-meta';
+  meta.textContent = describeEvent(e);
+  node.append(title, meta);
+  return node;
+}
 
 function pushEvents(events: GestureEvent[]): void {
   for (const e of events) {
-    // Update events are the high-frequency ones; showing every tick would bury the
-    // lifecycle events that actually matter. Keep one in six.
-    if (e.phase === 'update' && eventCount % 6 !== 0) { eventCount++; continue; }
     eventCount++;
-
-    const node = document.createElement('div');
-    node.className = `ev ${e.phase}`;
-    const title = document.createElement('b');
-    title.textContent = `${e.gesture} ${e.phase}`;
-    const meta = document.createElement('small');
-    const bits = [`${Math.round(e.t)}ms`, `hand ${e.hands.join('+')}`];
-    if (e.phase !== 'cancel' && e.phase !== 'end') bits.push(`conf ${e.confidence.toFixed(2)}`);
-    if (e.reason) bits.push(e.reason);
-    if (e.data) {
-      for (const [k, val] of Object.entries(e.data)) bits.push(`${k} ${val.toFixed(2)}`);
-    }
-    meta.textContent = bits.join(' · ');
-    node.append(title, meta);
-    tape.append(node);
+    if (e.phase === 'update' && eventCount % UPDATE_SAMPLE !== 0) continue;
+    tape.append(eventNode(e, !prefersReducedMotion));
     tape.scrollLeft = tape.scrollWidth;
   }
   while (tape.children.length > MAX_TAPE) tape.firstElementChild?.remove();
@@ -79,41 +103,54 @@ function consume(frame: Frame): void {
   if (views.some((v) => v.active)) frame.hands.forEach((_, i) => lit.add(i));
   drawFrame(overlay, frame, lit);
 
-  $('hud-hands').textContent = `hands ${frame.hands.length}`;
-  $('hud-frames').textContent = `frames ${frameCount}`;
+  const n = frame.hands.length;
+  $('hud-hands').textContent = `${n} hand${n === 1 ? '' : 's'}`;
 }
 
-function reset(source: string): void {
+function setSource(label: string, synthetic: boolean): void {
+  hudSrc.textContent = label;
+  hudSrc.classList.toggle('synthetic', synthetic);
+}
+
+function setProgress(i: number, total: number): void {
+  $('hud-frames').textContent = `frame ${i}/${total}`;
+  progressBar.style.transform = `scaleX(${total ? i / total : 0})`;
+}
+
+function reset(): void {
   stopCurrent?.();
+  stopCurrent = null;
+  replaying = false;
   recognizer = new Recognizer(machines);
   frameCount = 0;
   eventCount = 0;
   tape.textContent = '';
   $('ev-count').textContent = '0 events';
-  $('hud-src').textContent = source;
-  empty.style.display = 'none';
-  btnStop.disabled = false;
+  empty.hidden = true;
 }
 
 function idle(): void {
   stopCurrent = null;
+  replaying = false;
   btnStop.disabled = true;
   btnCam.disabled = false;
   btnReplay.disabled = false;
-  $('hud-src').textContent = 'idle';
+  setSource('idle', false);
 }
 
-// ---- source A: replay a recorded session (no permissions needed) ----
+// ---- source A: replay a synthetic session (no permissions needed) ----
 
 function replay(): void {
-  const target = fixtureSel.value;
-  const fixture = fixtures.find((f) => f.target === target) ?? fixtures[0]!;
-  reset(`replay · ${fixture.target}`);
+  const fixture = selectedFixture();
+  reset();
+  replaying = true;
+  btnStop.disabled = false;
   stage.classList.add('no-video');
+  inspector.expand(fixture.target);
+  setSource(`synthetic · ${fixture.target}`, true);
 
   const frames = fixture.session.frames;
   const step = frames.length > 1 ? frames[1]!.t - frames[0]!.t : 16;
-  const REST_MS = 700; // beat between loops, so the reset is legible
 
   let i = 0;
   let loops = 0;
@@ -137,7 +174,7 @@ function replay(): void {
         i = 0;
         acc = 0;
         loops++;
-        $('hud-src').textContent = `replay · ${fixture.target} · loop ${loops + 1}`;
+        setSource(`synthetic · ${fixture.target} · loop ${loops + 1}`, true);
       }
       raf = requestAnimationFrame(tick);
       return;
@@ -150,6 +187,7 @@ function replay(): void {
       i++;
       acc -= step;
     }
+    setProgress(i, frames.length);
     if (i >= frames.length) restUntil = now + REST_MS;
     raf = requestAnimationFrame(tick);
   };
@@ -158,11 +196,37 @@ function replay(): void {
   stopCurrent = () => cancelAnimationFrame(raf);
 }
 
+// Reduced motion: no autoplay. Run the default session up to the frame where its
+// target gesture is firing and hold there, so the first screen still shows a decision.
+function showStill(): void {
+  const fixture = selectedFixture();
+  reset();
+  inspector.expand(fixture.target);
+  const frames = fixture.session.frames;
+  let i = 0;
+  for (; i < frames.length; i++) {
+    consume(frames[i]!);
+    if (recognizer.inspect().some((v) => v.gesture === fixture.target && v.active)) break;
+  }
+  setProgress(Math.min(i + 1, frames.length), frames.length);
+  setSource(`synthetic · ${fixture.target} · paused`, true);
+}
+
 // ---- source B: live webcam via MediaPipe HandLandmarker ----
+
+function showStageMessage(title: string, body: string): void {
+  empty.hidden = false;
+  empty.textContent = '';
+  const h = document.createElement('h3');
+  h.textContent = title;
+  const p = document.createElement('p');
+  p.textContent = body;
+  empty.append(h, p);
+}
 
 async function startCamera(): Promise<void> {
   btnCam.disabled = true;
-  btnCam.textContent = 'Loading model…';
+  btnCamLabel.textContent = 'Loading hand model…';
   try {
     const { HandLandmarker, FilesetResolver } = await import('@mediapipe/tasks-vision');
     const fileset = await FilesetResolver.forVisionTasks(
@@ -184,9 +248,13 @@ async function startCamera(): Promise<void> {
     video.srcObject = stream;
     await video.play();
 
-    reset('camera');
+    reset();
+    btnStop.disabled = false;
+    btnReplay.disabled = false;
     stage.classList.remove('no-video');
-    btnCam.textContent = 'Camera running';
+    setSource('camera', false);
+    progressBar.style.transform = 'scaleX(0)';
+    btnCamLabel.textContent = 'Camera on';
 
     let raf = 0;
     let lastVideoTime = -1;
@@ -208,6 +276,7 @@ async function startCamera(): Promise<void> {
           })),
         };
         consume(frame);
+        $('hud-frames').textContent = `frame ${frameCount}`;
 
         fpsFrames++;
         if (now - fpsLast > 500) {
@@ -225,21 +294,19 @@ async function startCamera(): Promise<void> {
       for (const track of stream.getTracks()) track.stop();
       video.srcObject = null;
       stage.classList.add('no-video');
-      btnCam.textContent = 'Use my camera';
-      $('fps').textContent = '—';
+      btnCam.disabled = false;
+      btnCamLabel.textContent = 'Use my camera';
+      $('fps').textContent = '';
     };
   } catch (err) {
-    // Camera refusal is the common path, not an exception — say what to do instead.
+    // Camera refusal is the common path, not an exception: say what to do instead.
     btnCam.disabled = false;
-    btnCam.textContent = 'Use my camera';
-    empty.style.display = 'grid';
-    empty.innerHTML = '';
-    const h = document.createElement('h2');
-    h.textContent = 'Camera unavailable';
-    const p = document.createElement('p');
-    p.textContent =
-      `${err instanceof Error ? err.message : String(err)}. Replaying a recorded session runs the same recognizer with no camera.`;
-    empty.append(h, p);
+    btnCamLabel.textContent = 'Use my camera';
+    const reason = err instanceof Error ? err.message : String(err);
+    showStageMessage(
+      'Camera unavailable',
+      `${reason}. Allow camera access in your browser and try again, or replay a session to run the same recognizer without a camera.`,
+    );
   }
 }
 
@@ -248,8 +315,17 @@ btnCam.addEventListener('click', () => { void startCamera(); });
 btnStop.addEventListener('click', () => {
   stopCurrent?.();
   drawFrame(overlay, null, new Set());
-  empty.style.display = 'grid';
+  setProgress(0, 0);
+  $('hud-frames').textContent = 'frame 0';
+  showStageMessage('No hand in view', 'Replay a session to watch the machines run, or use your camera to drive them with your own hands.');
+  inspector.update([]);
   idle();
+});
+fixtureSel.addEventListener('change', () => {
+  if (replaying) replay();
+  else inspector.expand(fixtureSel.value);
 });
 
 inspector.update([]);
+if (prefersReducedMotion) showStill();
+else replay();

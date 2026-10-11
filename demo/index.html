@@ -3,15 +3,16 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Gestalt — live gesture recognizer</title>
-  <meta name="description" content="Declarative gesture recognition for hand-tracked interfaces. Watch the state machines decide, in real time." />
+  <title>Gestalt gesture recognizer</title>
+  <meta name="description" content="Declarative gesture recognition for hand-tracked interfaces. Watch the state machines decide, frame by frame." />
   <link rel="canonical" href="https://gestalt-pearl.vercel.app/" />
-  <meta property="og:title" content="Gestalt — live gesture recognizer" />
-  <meta property="og:description" content="Declarative gesture recognition for hand-tracked interfaces. Watch the state machines decide, in real time." />
+  <meta property="og:title" content="Gestalt gesture recognizer" />
+  <meta property="og:description" content="Declarative gesture recognition for hand-tracked interfaces. Watch the state machines decide, frame by frame." />
   <meta property="og:type" content="website" />
   <meta property="og:url" content="https://gestalt-pearl.vercel.app/" />
   <meta name="twitter:card" content="summary" />
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><text y='26' font-size='26'>👌</text></svg>" />
+  <meta name="theme-color" content="#e9ecea" />
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
   <script type="application/ld+json">
   {
     "@context": "https://schema.org",
@@ -25,66 +26,88 @@
 </head>
 <body>
   <header class="top">
-    <h1><a class="brand" href="/">gestalt <em>gesture DSL</em></a></h1>
-    <nav class="nav">
+    <a class="brand" href="/">gestalt</a>
+    <p class="tagline">Gestures written as YAML, compiled to state machines you can watch.</p>
+    <nav class="nav" aria-label="Site">
       <a href="/" aria-current="page">Live</a>
-      <a href="/about.html">What is this?</a>
+      <a href="/about.html">How it works</a>
       <a href="https://github.com/TarunYadgirkar/gestalt-gesture-dsl" target="_blank" rel="noopener">Source</a>
     </nav>
   </header>
 
   <main class="panel-grid">
-    <div style="display:flex;flex-direction:column;gap:var(--gap);min-width:0">
-      <section class="card">
+    <h1 class="sr-only">Live gesture recognizer</h1>
+    <div class="left-col">
+      <section class="card" aria-labelledby="viewport-title">
         <div class="card-head">
-          <span>viewport</span>
+          <h2 id="viewport-title">Viewport</h2>
           <span class="spacer"></span>
-          <span id="fps">—</span>
+          <span id="fps" class="num"></span>
         </div>
         <div class="stage no-video" id="stage">
           <video id="video" playsinline muted></video>
-          <canvas id="overlay"></canvas>
-          <div class="stage-empty" id="empty">
-            <h2>Nothing is tracking yet</h2>
-            <p>Replay a recorded session to watch the machines run with no permissions, or turn on the camera to drive them with your own hands.</p>
-            <noscript><p>The live recognizer needs JavaScript. Read <a href="/about.html">what Gestalt is</a> instead.</p></noscript>
+          <canvas id="overlay" aria-hidden="true"></canvas>
+          <div class="stage-empty" id="empty" hidden>
+            <h3>No hand in view</h3>
+            <p>Replay a session to watch the machines run, or use your camera to drive them with your own hands.</p>
           </div>
-          <div class="hud">
-            <span id="hud-hands">hands 0</span>
-            <span id="hud-frames">frames 0</span>
-            <span id="hud-src">idle</span>
+          <noscript><div class="stage-empty"><p>The recognizer needs JavaScript. Read <a href="/about.html">how Gestalt works</a> instead.</p></div></noscript>
+          <div class="hud" aria-live="off">
+            <span class="hud-chip" id="hud-src">idle</span>
+            <span class="hud-chip num" id="hud-hands">0 hands</span>
+            <span class="hud-chip num" id="hud-frames">frame 0</span>
           </div>
+          <div class="depth-key" aria-label="Skeleton color shows depth: amber is near the camera, white is at the hand plane, cyan is far">
+            <span>near</span><i></i><span>far</span>
+          </div>
+          <div class="progress" aria-hidden="true"><i id="progress-bar"></i></div>
         </div>
         <div class="controls">
-          <button class="primary" id="btn-replay">Replay a session</button>
-          <select id="fixture" aria-label="Recorded session"></select>
-          <button id="btn-cam">Use my camera</button>
-          <button id="btn-stop" disabled>Stop</button>
+          <label class="field">
+            <span class="field-label">Session</span>
+            <select id="fixture"></select>
+          </label>
+          <button class="btn primary" id="btn-replay" type="button">
+            <svg viewBox="0 0 256 256" aria-hidden="true"><path d="M232.4 114.5 88.3 26.4a15.9 15.9 0 0 0-24.3 13.5v176.2a15.9 15.9 0 0 0 24.3 13.5l144.1-88.1a15.7 15.7 0 0 0 0-27Z"/></svg>
+            Replay session
+          </button>
+          <button class="btn" id="btn-cam" type="button">
+            <svg viewBox="0 0 256 256" aria-hidden="true"><path d="M208 56h-27.7l-13.6-20.4A8 8 0 0 0 160 32H96a8 8 0 0 0-6.7 3.6L75.7 56H48a24 24 0 0 0-24 24v112a24 24 0 0 0 24 24h160a24 24 0 0 0 24-24V80a24 24 0 0 0-24-24Zm-80 128a44 44 0 1 1 44-44 44 44 0 0 1-44 44Z"/></svg>
+            <span id="btn-cam-label">Use my camera</span>
+          </button>
+          <button class="btn" id="btn-stop" type="button" disabled>
+            <svg viewBox="0 0 256 256" aria-hidden="true"><rect x="48" y="48" width="160" height="160" rx="16"/></svg>
+            Stop
+          </button>
         </div>
+        <p class="note">
+          Replay sessions are synthetic: the test suite's hand poser generates them with exact ground-truth labels. They show how the machines behave, not how well tracking works on a real camera.
+        </p>
       </section>
 
-      <section class="card tape-wrap">
+      <section class="card" aria-labelledby="tape-title">
         <div class="card-head">
-          <span>event tape</span>
+          <h2 id="tape-title">Events</h2>
           <span class="spacer"></span>
-          <span id="ev-count">0 events</span>
+          <span id="ev-count" class="num">0 events</span>
         </div>
-        <div class="tape" id="tape"></div>
+        <ol class="tape" id="tape"></ol>
       </section>
     </div>
 
-    <section class="card inspector">
+    <section class="card inspector" aria-labelledby="machines-title">
       <div class="card-head">
-        <span>state machines</span>
+        <h2 id="machines-title">State machines</h2>
         <span class="spacer"></span>
-        <span>click a card for its guards</span>
+        <span class="hint">Open one to see its live guards</span>
+      </div>
+      <div class="legend" aria-hidden="true">
+        <span><i class="node-dot"></i>state</span>
+        <span><i class="node-dot current"></i>current</span>
+        <span><i class="node-dot accept"></i>accepting</span>
+        <span>p = priority</span>
       </div>
       <div class="machines" id="machines"></div>
-      <div class="ramp">
-        <span>depth</span>
-        <i class="ramp-bar"></i>
-        <span>near · mid · far</span>
-      </div>
     </section>
   </main>
 

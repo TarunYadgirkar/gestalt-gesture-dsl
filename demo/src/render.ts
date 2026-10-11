@@ -11,15 +11,18 @@ const BONES: [number, number][] = [
   [0, 17],
 ];
 
-const NEAR = [255, 122, 69] as const;
-const MID = [196, 79, 232] as const;
-const FAR = [74, 108, 247] as const;
+// Mirrors --near / --plane / --far and --live-glow in styles.css.
+const NEAR = [255, 179, 65] as const;
+const MID = [238, 241, 234] as const;
+const FAR = [63, 183, 232] as const;
+const LIVE = 'rgba(54, 213, 142, 0.95)';
+const IDLE_GAP = 'rgba(199, 207, 203, 0.45)';
 
 const lerp = (a: number, b: number, t: number): number => a + (b - a) * t;
 
 /**
- * Depth ramp: z is negative toward the camera in MediaPipe space, so a hand reaching
- * forward warms from blue through violet to amber. The skeleton is not decorated with
+ * Diverging depth ramp: z is negative toward the camera in MediaPipe space, so a hand
+ * reaching forward warms from cyan through white (the hand plane) to amber. The skeleton is not decorated with
  * colour — it reports the axis you otherwise cannot see on a 2D screen.
  */
 function depthColor(z: number, alpha = 1): string {
@@ -97,7 +100,7 @@ function drawHand(
   const index = pt(LM.INDEX_TIP);
   const gap = Math.hypot(thumb.x - index.x, thumb.y - index.y);
   if (gap < w * 0.14) {
-    ctx.strokeStyle = gap < w * 0.05 ? 'rgba(70,229,180,0.9)' : 'rgba(139,130,168,0.5)';
+    ctx.strokeStyle = gap < w * 0.05 ? LIVE : IDLE_GAP;
     ctx.lineWidth = 1.5;
     ctx.setLineDash([4, 4]);
     ctx.beginPath();

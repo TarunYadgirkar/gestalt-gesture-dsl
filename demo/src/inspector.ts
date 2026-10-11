@@ -12,6 +12,9 @@ const el = (tag: string, cls?: string, text?: string): HTMLElement => {
   return n;
 };
 
+const CARET =
+  '<svg class="machine-caret" viewBox="0 0 256 256" aria-hidden="true"><path d="m181.7 133.7-80 80a8 8 0 0 1-11.4-11.4l74.4-74.3-74.4-74.3a8 8 0 0 1 11.4-11.4l80 80a8 8 0 0 1 0 11.4Z"/></svg>';
+
 export class Inspector {
   private readonly cards = new Map<string, HTMLElement>();
   private readonly open = new Set<string>();
@@ -20,9 +23,22 @@ export class Inspector {
     private readonly root: HTMLElement,
     private readonly machines: CompiledMachine[],
   ) {
-    // Pinch starts expanded so the guard readout is visible without a click.
-    this.open.add('pinch');
     this.build();
+  }
+
+  expand(name: string): void {
+    if (this.open.has(name)) return;
+    this.toggle(name);
+  }
+
+  private toggle(name: string): void {
+    const card = this.cards.get(name);
+    if (!card) return;
+    if (this.open.has(name)) this.open.delete(name);
+    else this.open.add(name);
+    const isOpen = this.open.has(name);
+    card.classList.toggle('open', isOpen);
+    card.querySelector('.machine-head')?.setAttribute('aria-expanded', String(isOpen));
   }
 
   private build(): void {
@@ -31,26 +47,18 @@ export class Inspector {
       const card = el('div', 'machine');
       card.dataset.gesture = m.name;
 
-      const head = el('div', 'machine-head');
+      const head = document.createElement('button');
+      head.type = 'button';
+      head.className = 'machine-head';
+      head.setAttribute('aria-expanded', String(this.open.has(m.name)));
+      head.setAttribute('aria-controls', `guards-${m.name}`);
+      head.insertAdjacentHTML('beforeend', CARET);
       head.append(
         el('span', 'machine-name', m.name),
         el('span', 'machine-prio', `p${m.priority}`),
         el('span', 'machine-state', 'idle'),
       );
-      head.setAttribute('role', 'button');
-      head.setAttribute('tabindex', '0');
-      head.setAttribute('aria-expanded', String(this.open.has(m.name)));
-
-      const toggle = (): void => {
-        if (this.open.has(m.name)) this.open.delete(m.name);
-        else this.open.add(m.name);
-        card.classList.toggle('open', this.open.has(m.name));
-        head.setAttribute('aria-expanded', String(this.open.has(m.name)));
-      };
-      head.addEventListener('click', toggle);
-      head.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); }
-      });
+      head.addEventListener('click', () => this.toggle(m.name));
 
       const chain = el('div', 'chain');
       const d = m.describe();
@@ -62,6 +70,7 @@ export class Inspector {
       });
 
       const guards = el('div', 'guards');
+      guards.id = `guards-${m.name}`;
 
       card.classList.toggle('open', this.open.has(m.name));
       card.append(head, chain, guards);
