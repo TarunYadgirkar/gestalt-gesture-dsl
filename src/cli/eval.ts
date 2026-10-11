@@ -5,7 +5,7 @@ import { loadGestureLibrary } from '../dsl/library.js';
 import {
   aggregate, scoreSession, compareToBaseline, DEFAULT_TOLERANCES, formatRegression, renderReport,
 } from '../eval/index.js';
-import { BASELINE_PATH, evalCorpus } from '../eval/fixtures.js';
+import { BASELINE_PATH, evalCorpus, recordedSessions } from '../eval/fixtures.js';
 import type { GestureMetrics } from '../types.js';
 
 const args = process.argv.slice(2);
@@ -20,6 +20,13 @@ const machines = loadGestureLibrary();
 const corpus = evalCorpus();
 const scores = corpus.map((s) => scoreSession(machines, s));
 const metrics = aggregate(scores);
+const recordedCount = recordedSessions().length;
+
+const corpusLine = (): string => {
+  const head = `${corpus.length} sessions (${corpus.length - recordedCount} synthetic, ${recordedCount} recorded) · ${machines.length} gestures`;
+  if (recordedCount > 0) return head;
+  return `${head}\nSynthetic corpus: scores show the machines match their fixtures, not real-camera accuracy.`;
+};
 
 const table = (rows: GestureMetrics[]): string => {
   const head = ['gesture', 'TP', 'FP', 'FN', 'prec', 'recall', 'FP/min', 'latency'];
@@ -42,7 +49,7 @@ const writeOut = (path: string, content: string): void => {
 };
 
 if (command === 'run') {
-  process.stdout.write(`${corpus.length} sessions · ${machines.length} gestures\n\n${table(metrics)}\n`);
+  process.stdout.write(`${corpusLine()}\n\n${table(metrics)}\n`);
   process.exit(0);
 }
 
