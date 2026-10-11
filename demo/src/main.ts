@@ -2,6 +2,7 @@ import './styles.css';
 import { Recognizer, compileGestures, type Frame, type GestureEvent } from '../../src/browser.js';
 import { positiveFixtures } from '../../src/synthetic/sequences.js';
 import type { LabeledSession } from '../../src/synthetic/sequences.js';
+import type { HandLandmarker } from '@mediapipe/tasks-vision';
 import { GESTURE_SOURCES } from './gestures.js';
 import { drawFrame } from './render.js';
 import { Inspector } from './inspector.js';
@@ -91,7 +92,7 @@ function pushEvents(events: GestureEvent[]): void {
 
 // ---- shared per-frame path: both sources go through exactly this ----
 
-function consume(frame: Frame): void {
+function consume(frame: Frame, sourceAspect?: number): void {
   frameCount++;
   const events = recognizer.push(frame);
   if (events.length) pushEvents(events);
@@ -101,7 +102,7 @@ function consume(frame: Frame): void {
 
   const lit = new Set<number>();
   if (views.some((v) => v.active)) frame.hands.forEach((_, i) => lit.add(i));
-  drawFrame(overlay, frame, lit);
+  drawFrame(overlay, frame, lit, sourceAspect);
 
   const n = frame.hands.length;
   $('hud-hands').textContent = `${n} hand${n === 1 ? '' : 's'}`;
@@ -224,15 +225,38 @@ function showStageMessage(title: string, body: string): void {
   empty.append(h, p);
 }
 
+function trimPeriod(text: string): string {
+  return text.replace(/\.+$/, '');
+}
+
+function showCameraError(err: unknown): void {
+  console.error('camera failed', err);
+  btnCam.disabled = false;
+  btnCamLabel.textContent = 'Use my camera';
+  const reason = err instanceof Error ? err.message : String(err);
+  showStageMessage(
+    'Camera unavailable',
+    `${trimPeriod(reason)}. Allow camera access in your browser and try again, or replay a session to run the same recognizer without a camera.`,
+  );
+}
+
 async function startCamera(): Promise<void> {
   btnCam.disabled = true;
   btnCamLabel.textContent = 'Loading hand model…';
+  let stream: MediaStream | null = null;
+  let landmarker: HandLandmarker | null = null;
+  const release = (): void => {
+    for (const track of stream?.getTracks() ?? []) track.stop();
+    video.srcObject = null;
+    landmarker?.close();
+  };
+
   try {
-    const { HandLandmarker, FilesetResolver } = await import('@mediapipe/tasks-vision');
+    const { HandLandmarker: Landmarker, FilesetResolver } = await import('@mediapipe/tasks-vision');
     const fileset = await FilesetResolver.forVisionTasks(
       'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.35/wasm',
     );
-    const landmarker = await HandLandmarker.createFromOptions(fileset, {
+    landmarker = await Landmarker.createFromOptions(fileset, {
       baseOptions: {
         modelAssetPath:
           'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task',
@@ -242,30 +266,47 @@ async function startCamera(): Promise<void> {
       numHands: 2,
     });
 
-    const stream = await navigator.mediaDevices.getUserMedia({
+    stream = await navigator.mediaDevices.getUserMedia({
       video: { width: 960, height: 720, facingMode: 'user' },
     });
     video.srcObject = stream;
     await video.play();
+  } catch (err) {
+    // Camera refusal is the common path, not an exception: say what to do instead.
+    release();
+    showCameraError(err);
+    return;
+  }
 
-    reset();
-    btnStop.disabled = false;
-    btnReplay.disabled = false;
-    stage.classList.remove('no-video');
-    setSource('camera', false);
-    progressBar.style.transform = 'scaleX(0)';
-    btnCamLabel.textContent = 'Camera on';
+  const activeLandmarker = landmarker;
+  reset();
+  btnStop.disabled = false;
+  btnReplay.disabled = false;
+  stage.classList.remove('no-video');
+  setSource('camera', false);
+  progressBar.style.transform = 'scaleX(0)';
+  btnCamLabel.textContent = 'Camera on';
 
-    let raf = 0;
-    let lastVideoTime = -1;
-    let fpsLast = performance.now();
-    let fpsFrames = 0;
+  let raf = 0;
+  let lastVideoTime = -1;
+  let fpsLast = performance.now();
+  let fpsFrames = 0;
 
-    const tick = (): void => {
+  const stopCamera = (): void => {
+    cancelAnimationFrame(raf);
+    release();
+    stage.classList.add('no-video');
+    btnCam.disabled = false;
+    btnCamLabel.textContent = 'Use my camera';
+    $('fps').textContent = '';
+  };
+
+  const tick = (): void => {
+    try {
       if (video.currentTime !== lastVideoTime) {
         lastVideoTime = video.currentTime;
         const now = performance.now();
-        const result = landmarker.detectForVideo(video, now);
+        const result = activeLandmarker.detectForVideo(video, now);
 
         const frame: Frame = {
           t: now,
@@ -275,7 +316,7 @@ async function startCamera(): Promise<void> {
             landmarks: landmarks.map((p) => ({ x: p.x, y: p.y, z: p.z })),
           })),
         };
-        consume(frame);
+        consume(frame, video.videoWidth / video.videoHeight || undefined);
         $('hud-frames').textContent = `frame ${frameCount}`;
 
         fpsFrames++;
@@ -286,28 +327,14 @@ async function startCamera(): Promise<void> {
         }
       }
       raf = requestAnimationFrame(tick);
-    };
-    raf = requestAnimationFrame(tick);
-
-    stopCurrent = () => {
-      cancelAnimationFrame(raf);
-      for (const track of stream.getTracks()) track.stop();
-      video.srcObject = null;
-      stage.classList.add('no-video');
-      btnCam.disabled = false;
-      btnCamLabel.textContent = 'Use my camera';
-      $('fps').textContent = '';
-    };
-  } catch (err) {
-    // Camera refusal is the common path, not an exception: say what to do instead.
-    btnCam.disabled = false;
-    btnCamLabel.textContent = 'Use my camera';
-    const reason = err instanceof Error ? err.message : String(err);
-    showStageMessage(
-      'Camera unavailable',
-      `${reason}. Allow camera access in your browser and try again, or replay a session to run the same recognizer without a camera.`,
-    );
-  }
+    } catch (err) {
+      stopCamera();
+      idle();
+      showCameraError(err);
+    }
+  };
+  raf = requestAnimationFrame(tick);
+  stopCurrent = stopCamera;
 }
 
 btnReplay.addEventListener('click', replay);
@@ -322,8 +349,10 @@ btnStop.addEventListener('click', () => {
   idle();
 });
 fixtureSel.addEventListener('change', () => {
+  const cameraOn = stopCurrent !== null && !replaying;
   if (replaying) replay();
-  else inspector.expand(fixtureSel.value);
+  else if (cameraOn) inspector.expand(fixtureSel.value);
+  else showStill();
 });
 
 inspector.update([]);

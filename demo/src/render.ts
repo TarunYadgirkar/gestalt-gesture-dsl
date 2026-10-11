@@ -34,37 +34,51 @@ function depthColor(z: number, alpha = 1): string {
   return `rgba(${r | 0}, ${g | 0}, ${b | 0}, ${alpha})`;
 }
 
+type Box = { x: number; y: number; w: number; h: number };
+
+// The video element uses object-fit: cover, so a camera frame is cropped to the stage.
+// Landmarks are normalized to the uncropped frame and must be mapped through the same
+// crop. Synthetic sessions have no source frame and fill the stage directly.
+function coverBox(w: number, h: number, sourceAspect?: number): Box {
+  if (!sourceAspect) return { x: 0, y: 0, w, h };
+  const boxW = w / h > sourceAspect ? w : h * sourceAspect;
+  const boxH = boxW / sourceAspect;
+  return { x: (w - boxW) / 2, y: (h - boxH) / 2, w: boxW, h: boxH };
+}
+
 export function drawFrame(
   canvas: HTMLCanvasElement,
   frame: Frame | null,
   highlight: Set<number>,
+  sourceAspect?: number,
 ): void {
   const ctx = canvas.getContext('2d');
   if (!ctx) return;
 
   const dpr = Math.min(2, window.devicePixelRatio || 1);
-  const w = canvas.clientWidth * dpr;
-  const h = canvas.clientHeight * dpr;
+  const w = Math.round(canvas.clientWidth * dpr);
+  const h = Math.round(canvas.clientHeight * dpr);
   if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; }
 
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   if (!frame) return;
 
+  const box = coverBox(canvas.width, canvas.height, sourceAspect);
   frame.hands.forEach((hand, i) => {
-    drawHand(ctx, hand, canvas.width, canvas.height, highlight.has(i));
+    drawHand(ctx, hand, box, highlight.has(i));
   });
 }
 
 function drawHand(
   ctx: CanvasRenderingContext2D,
   hand: HandSample,
-  w: number,
-  h: number,
+  box: Box,
   lit: boolean,
 ): void {
+  const w = box.w;
   const pt = (i: number): { x: number; y: number; z: number } => {
     const lm = hand.landmarks[i]!;
-    return { x: lm.x * w, y: lm.y * h, z: lm.z };
+    return { x: box.x + lm.x * box.w, y: box.y + lm.y * box.h, z: lm.z };
   };
 
   ctx.lineCap = 'round';

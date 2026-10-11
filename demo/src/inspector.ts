@@ -17,6 +17,8 @@ const CARET =
 
 export class Inspector {
   private readonly cards = new Map<string, HTMLElement>();
+  private readonly initialState = new Map<string, string>();
+  private latest = new Map<string, InstanceView>();
   private readonly open = new Set<string>();
 
   constructor(
@@ -39,6 +41,7 @@ export class Inspector {
     const isOpen = this.open.has(name);
     card.classList.toggle('open', isOpen);
     card.querySelector('.machine-head')?.setAttribute('aria-expanded', String(isOpen));
+    if (isOpen) this.renderGuards(card.querySelector('.guards')!, this.latest.get(name));
   }
 
   private build(): void {
@@ -62,6 +65,7 @@ export class Inspector {
 
       const chain = el('div', 'chain');
       const d = m.describe();
+      this.initialState.set(m.name, d.initial);
       d.states.forEach((s, i) => {
         if (i > 0) chain.append(el('span', 'edge'));
         const node = el('span', `node${s.accept ? ' accept' : ''}`, s.id);
@@ -89,10 +93,11 @@ export class Inspector {
       if (!prev || rank(v) > rank(prev)) best.set(v.gesture, v);
     }
 
+    this.latest = best;
     for (const [name, card] of this.cards) {
       const v = best.get(name);
       const stateEl = card.querySelector('.machine-state')!;
-      const initial = this.machines.find((m) => m.name === name)!.describe().initial;
+      const initial = this.initialState.get(name)!;
       const state = v?.state ?? initial;
 
       stateEl.textContent = state;
@@ -103,7 +108,7 @@ export class Inspector {
         node.classList.toggle('current', node.dataset.state === state);
       }
 
-      this.renderGuards(card.querySelector('.guards')!, v);
+      if (this.open.has(name)) this.renderGuards(card.querySelector('.guards')!, v);
     }
   }
 
@@ -119,7 +124,9 @@ export class Inspector {
     host.textContent = '';
     for (const g of v.guards) {
       const row = el('div', `guard${g.passed ? ' pass' : ''}`);
-      row.append(el('span', 'tick', g.passed ? '✓' : '·'));
+      const tick = el('span', 'tick', g.passed ? '✓' : '·');
+      tick.setAttribute('aria-hidden', 'true');
+      row.append(tick, el('span', 'sr-only', g.passed ? 'true: ' : 'false: '));
       row.append(el('span', 'expr', g.guard));
       const dwell = g.minHoldMs > 0 ? ` ${Math.min(g.heldMs, g.minHoldMs) | 0}/${g.minHoldMs}ms` : '';
       row.append(el('span', 'to', `→ ${g.to}${dwell}`));
